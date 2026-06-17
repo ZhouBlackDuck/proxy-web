@@ -1,0 +1,28 @@
+version: "3.8"
+
+services:
+  proxy-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: proxy-web
+    restart: unless-stopped
+    ports:
+      - "9080:80"       # WebUI HTTP
+      - "7890:7890"     # Mihomo mixed port (HTTP + SOCKS5)
+      - "7890:7890/udp" # Mihomo mixed port UDP
+    volumes:
+      - ./data:/data
+    cap_add:
+      - NET_ADMIN       # Required for TUN mode
+    devices:
+      - /dev/net/tun:/dev/net/tun  # Required for TUN mode
+    environment:
+      - TZ=Asia/Shanghai
+      - DATA_DIR=/data
+    networks:
+      - proxy-net
+
+networks:
+  proxy-net:
+    driver: bridge

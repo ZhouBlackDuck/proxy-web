@@ -1,0 +1,33 @@
+# Dependencies
+**/node_modules/
+**/vendor/
+
+# Build artifacts
+frontend/dist/
+backend/server
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Documentation (not needed in image)
+docs/
+
+# Data volume
+data/
+
+# Reference projects (not needed in build)
+clash-verge-rev/
+mihomo/
+Sub-Store/backend/node_modules/
+subconverter/
