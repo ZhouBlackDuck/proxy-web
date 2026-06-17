@@ -26,8 +26,5 @@ docs/
 # Data volume
 data/
 
-# Reference projects (not needed in build)
-clash-verge-rev/
-mihomo/
-Sub-Store/backend/node_modules/
-subconverter/
+# History
+.history/
