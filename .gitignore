@@ -1,0 +1,23 @@
+# Dependencies
+**/node_modules/
+**/vendor/
+
+# Build artifacts
+frontend/dist/
+backend/server
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data volume
+data/
+
+# History
+.history/
