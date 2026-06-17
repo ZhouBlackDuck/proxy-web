@@ -1,0 +1,6 @@
+# Ensure shell scripts use Unix line endings (LF)
+*.sh text eol=lf
+
+# Docker-related files
+Dockerfile text eol=lf
+docker-compose.yml text eol=lf

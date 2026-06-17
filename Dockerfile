@@ -66,9 +66,9 @@ COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
 # Copy Nginx config
 COPY docker/nginx.conf /etc/nginx/http.d/default.conf
 
-# Copy entrypoint
+# Copy entrypoint (sed strips any CRLF from Windows checkouts)
 COPY docker/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 # Create data directories
 RUN mkdir -p /data/webui/profiles /data/mihomo/bin /data/sub-store
