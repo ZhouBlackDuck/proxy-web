@@ -1,4 +1,4 @@
-.PHONY: dev-frontend dev-backend build build-frontend build-backend docker-build docker-up docker-down docker-logs clean
+.PHONY: dev-frontend dev-backend build build-frontend build-backend docker-build docker-up docker-down docker-logs clean release
 
 # Version info (injected at build time)
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -79,3 +79,9 @@ install-backend:
 	cd backend && go mod download
 
 install: install-frontend install-backend
+
+# Release (tag push triggers GitHub Actions workflow)
+release:
+	@TAG="$${VERSION:-v$$(date +%Y.%m.%d)}"; \
+	echo "Creating tag $$TAG and pushing ..."; \
+	git tag $$TAG && git push origin $$TAG
