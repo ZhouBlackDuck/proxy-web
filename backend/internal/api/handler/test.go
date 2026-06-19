@@ -94,6 +94,7 @@ func (h *TestHandler) TestAll(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	proxyAddr := h.getProxyAddr()
 	results := make([]TestResult, len(sites))
 	var wg sync.WaitGroup
 
@@ -101,7 +102,7 @@ func (h *TestHandler) TestAll(w http.ResponseWriter, r *http.Request) {
 		wg.Add(1)
 		go func(idx int, s TestSite) {
 			defer wg.Done()
-			results[idx] = h.testSite(s)
+			results[idx] = h.testSite(s, proxyAddr)
 		}(i, site)
 	}
 
@@ -122,19 +123,18 @@ func (h *TestHandler) TestSingle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := h.testSite(TestSite{Name: req.URL, URL: req.URL, Icon: "🌐"})
+	proxyAddr := h.getProxyAddr()
+	result := h.testSite(TestSite{Name: req.URL, URL: req.URL, Icon: "🌐"}, proxyAddr)
 	writeJSON(w, http.StatusOK, result)
 }
 
-func (h *TestHandler) testSite(site TestSite) TestResult {
+func (h *TestHandler) testSite(site TestSite, proxyAddr string) TestResult {
 	result := TestResult{
 		Name:    site.Name,
 		URL:     site.URL,
 		Icon:    site.Icon,
 		Latency: -1,
 	}
-
-	proxyAddr := h.getProxyAddr()
 
 	// Create HTTP client that uses the mihomo proxy
 	client := &http.Client{

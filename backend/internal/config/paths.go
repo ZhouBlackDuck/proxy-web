@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -16,6 +18,7 @@ const (
 type Config struct {
 	DataDir                    string        `json:"-"`
 	PasswordHash               string        `json:"passwordHash,omitempty"`
+	JWTSecret                  string        `json:"jwtSecret,omitempty"`
 	Theme                      string        `json:"theme"`
 	Language                   string        `json:"language"`
 	Mihomo                     MihomoConfig  `json:"mihomo"`
@@ -91,7 +94,11 @@ func Load() (*Config, error) {
 	data, err := os.ReadFile(settingsPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// Use defaults, will be saved on first setup
+			// Use defaults, generate JWT secret, will be saved on first setup
+			secret := make([]byte, 32)
+			if _, err := rand.Read(secret); err == nil {
+				cfg.JWTSecret = hex.EncodeToString(secret)
+			}
 			return cfg, nil
 		}
 		return nil, fmt.Errorf("read settings: %w", err)
@@ -101,6 +108,16 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("parse settings: %w", err)
 	}
 	cfg.DataDir = dataDir
+
+	// Generate JWT secret if not set (first run or upgrade)
+	if cfg.JWTSecret == "" {
+		secret := make([]byte, 32)
+		if _, err := rand.Read(secret); err != nil {
+			return nil, fmt.Errorf("generate jwt secret: %w", err)
+		}
+		cfg.JWTSecret = hex.EncodeToString(secret)
+		cfg.Save()
+	}
 
 	return cfg, nil
 }

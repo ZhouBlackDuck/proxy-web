@@ -12,8 +12,6 @@ import (
 	"github.com/zwforum/proxy-web/internal/store"
 )
 
-var jwtSecret = []byte("proxy-web-secret-key-change-in-production")
-
 type AuthHandler struct {
 	cfg   *config.Config
 	store *store.FileStore
@@ -72,7 +70,7 @@ func (h *AuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := generateToken()
+	token, err := h.generateToken()
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": "failed to generate token",
@@ -110,7 +108,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := generateToken()
+	token, err := h.generateToken()
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": "failed to generate token",
@@ -183,14 +181,14 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "password changed"})
 }
 
-func generateToken() (string, error) {
+func (h *AuthHandler) generateToken() (string, error) {
 	claims := jwt.MapClaims{
 		"sub": "user",
 		"iat": jwt.NewNumericDate(time.Now()),
 		"exp": jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(jwtSecret)
+	return token.SignedString([]byte(h.cfg.JWTSecret))
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {

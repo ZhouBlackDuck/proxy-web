@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -150,30 +149,12 @@ func formatTime(timeStr string) string {
 }
 
 func parseTimeToUnix(timeStr string) int64 {
-	// Parse ISO format: 2026-06-19T05:40:43.123456789Z
-	// Simplified: extract HH:MM:SS and convert to Unix timestamp for today
-	if idx := strings.Index(timeStr, "T"); idx != -1 {
-		timePart := timeStr[idx+1:]
-		if dotIdx := strings.Index(timePart, "."); dotIdx != -1 {
-			timePart = timePart[:dotIdx]
-		}
-		if zIdx := strings.Index(timePart, "Z"); zIdx != -1 {
-			timePart = timePart[:zIdx]
-		}
-		// Parse HH:MM:SS
-		parts := strings.Split(timePart, ":")
-		if len(parts) == 3 {
-			hour := 0
-			minute := 0
-			second := 0
-			fmt.Sscanf(parts[0], "%d", &hour)
-			fmt.Sscanf(parts[1], "%d", &minute)
-			fmt.Sscanf(parts[2], "%d", &second)
-			// Create timestamp for today with this time
-			now := time.Now()
-			t := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, second, 0, now.Location())
-			return t.Unix()
-		}
+	// Parse full ISO format: 2026-06-19T05:40:43.123456789Z
+	if t, err := time.Parse(time.RFC3339Nano, timeStr); err == nil {
+		return t.Unix()
+	}
+	if t, err := time.Parse(time.RFC3339, timeStr); err == nil {
+		return t.Unix()
 	}
 	return time.Now().Unix()
 }

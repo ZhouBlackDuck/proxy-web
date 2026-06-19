@@ -201,7 +201,7 @@ func (h *KernelHandler) GeoStatus(w http.ResponseWriter, r *http.Request) {
 	var status []geoFile
 
 	for _, name := range files {
-		path := filepath.Join("/data/mihomo", name)
+		path := filepath.Join(h.cfg.DataDir, "mihomo", name)
 		info, err := os.Stat(path)
 		if err != nil {
 			status = append(status, geoFile{Name: name, Exists: false})

@@ -16,8 +16,6 @@ const (
 	AuthContextKey contextKey = "authenticated"
 )
 
-var jwtSecret = []byte("proxy-web-secret-key-change-in-production")
-
 // AuthMiddleware validates JWT tokens
 func AuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -44,7 +42,7 @@ func AuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 				if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 					return nil, jwt.ErrSignatureInvalid
 				}
-				return jwtSecret, nil
+				return []byte(cfg.JWTSecret), nil
 			})
 
 			if err != nil || !token.Valid {
