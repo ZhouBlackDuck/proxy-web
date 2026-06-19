@@ -14,13 +14,15 @@ const (
 
 // Config represents the application configuration loaded from settings.json
 type Config struct {
-	DataDir      string          `json:"-"`
-	PasswordHash string          `json:"passwordHash,omitempty"`
-	Theme        string          `json:"theme"`
-	Language     string          `json:"language"`
-	Mihomo       MihomoConfig    `json:"mihomo"`
-	SubStore     SubStoreConfig  `json:"substore"`
-	Ports        PortSettings    `json:"ports"`
+	DataDir                    string        `json:"-"`
+	PasswordHash               string        `json:"passwordHash,omitempty"`
+	Theme                      string        `json:"theme"`
+	Language                   string        `json:"language"`
+	Mihomo                     MihomoConfig  `json:"mihomo"`
+	SubStore                   SubStoreConfig `json:"substore"`
+	Ports                      PortSettings  `json:"ports"`
+	ActiveSubscription         string        `json:"activeSubscription,omitempty"`
+	ExportIncludeSubscriptions bool          `json:"exportIncludeSubscriptions"`
 }
 
 type MihomoConfig struct {

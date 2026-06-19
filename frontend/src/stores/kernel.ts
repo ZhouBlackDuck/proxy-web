@@ -2,12 +2,20 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { kernelApi, type KernelVersion, type KernelConfig } from '../api/kernel'
 
+const MAX_HISTORY = 60
+
 export const useKernelStore = defineStore('kernel', () => {
   const version = ref<KernelVersion | null>(null)
   const config = ref<KernelConfig | null>(null)
   const alive = ref(false)
-  const traffic = ref({ up: 0, down: 0, upTotal: 0, downTotal: 0 })
+  const traffic = ref({ up: 0, down: 0 })
   const memory = ref({ inuse: 0 })
+  const totalUp = ref(0)
+  const totalDown = ref(0)
+
+  // Traffic history for graph (persists across page navigations)
+  const upHistory = ref<number[]>([])
+  const downHistory = ref<number[]>([])
 
   async function fetchVersion() {
     try {
@@ -29,6 +37,13 @@ export const useKernelStore = defineStore('kernel', () => {
   function updateTraffic(data: { up: number; down: number }) {
     traffic.value.up = data.up
     traffic.value.down = data.down
+    totalUp.value += data.up
+    totalDown.value += data.down
+
+    upHistory.value.push(data.up)
+    downHistory.value.push(data.down)
+    if (upHistory.value.length > MAX_HISTORY) upHistory.value.shift()
+    if (downHistory.value.length > MAX_HISTORY) downHistory.value.shift()
   }
 
   function updateMemory(data: { inuse: number }) {
@@ -73,6 +88,10 @@ export const useKernelStore = defineStore('kernel', () => {
     alive,
     traffic,
     memory,
+    totalUp,
+    totalDown,
+    upHistory,
+    downHistory,
     fetchVersion,
     fetchConfig,
     updateTraffic,

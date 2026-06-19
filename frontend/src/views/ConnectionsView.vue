@@ -2,25 +2,25 @@
   <AppLayout>
     <n-space vertical :size="16">
       <n-space justify="space-between" align="center">
-        <n-text strong style="font-size: 18px">连接监控</n-text>
+        <n-text strong style="font-size: 18px">{{ t('connections.title') }}</n-text>
         <n-space>
-          <n-input v-model:value="searchText" placeholder="搜索 host/chain..." clearable style="width: 200px" size="small" />
+          <n-input v-model:value="searchText" :placeholder="t('connections.searchPlaceholder')" clearable style="width: 200px" size="small" />
           <n-switch v-model:value="paused" size="small">
-            <template #checked>暂停</template>
-            <template #unchecked>实时</template>
+            <template #checked>{{ t('connections.paused') }}</template>
+            <template #unchecked>{{ t('connections.live') }}</template>
           </n-switch>
           <n-button size="small" type="error" @click="handleCloseAll" :loading="closingAll">
-            关闭全部
+            {{ t('connections.closeAll') }}
           </n-button>
         </n-space>
       </n-space>
 
       <n-space :size="8">
-        <n-text depth="3">连接数: {{ connections.length }}</n-text>
+        <n-text depth="3">{{ t('connections.connectionCount') }}: {{ connections.length }}</n-text>
         <n-text depth="3">|</n-text>
-        <n-text depth="3">总上传: {{ formatBytes(snapshot.uploadTotal) }}</n-text>
+        <n-text depth="3">{{ t('connections.totalUpload') }}: {{ formatBytes(snapshot.uploadTotal) }}</n-text>
         <n-text depth="3">|</n-text>
-        <n-text depth="3">总下载: {{ formatBytes(snapshot.downloadTotal) }}</n-text>
+        <n-text depth="3">{{ t('connections.totalDownload') }}: {{ formatBytes(snapshot.downloadTotal) }}</n-text>
       </n-space>
 
       <n-data-table
@@ -39,11 +39,13 @@
 <script setup lang="ts">
 import { ref, computed, h } from 'vue'
 import { NButton, NTag, NText, NSpace, useMessage } from 'naive-ui'
+import { useI18n } from 'vue-i18n'
 import type { DataTableColumns } from 'naive-ui'
 import AppLayout from '../components/layout/AppLayout.vue'
 import { useWebSocket } from '../composables/useWebSocket'
 import { kernelApi, type Connection, type ConnectionsSnapshot } from '../api/kernel'
 
+const { t } = useI18n()
 const message = useMessage()
 
 const paused = ref(false)
@@ -76,7 +78,7 @@ const filteredConnections = computed(() => {
   )
 })
 
-const columns: DataTableColumns<Connection> = [
+const columns = computed<DataTableColumns<Connection>>(() => [
   {
     title: 'Host',
     key: 'host',
@@ -87,7 +89,7 @@ const columns: DataTableColumns<Connection> = [
     },
   },
   {
-    title: '类型',
+    title: t('connections.type'),
     key: 'type',
     width: 80,
     render(row) {
@@ -95,7 +97,7 @@ const columns: DataTableColumns<Connection> = [
     },
   },
   {
-    title: '规则',
+    title: t('connections.rule'),
     key: 'rule',
     width: 180,
     render(row) {
@@ -105,7 +107,7 @@ const columns: DataTableColumns<Connection> = [
     },
   },
   {
-    title: '代理链',
+    title: t('connections.proxyChain'),
     key: 'chains',
     width: 200,
     ellipsis: { tooltip: true },
@@ -114,21 +116,21 @@ const columns: DataTableColumns<Connection> = [
     },
   },
   {
-    title: '上传',
+    title: t('connections.upload'),
     key: 'upload',
     width: 90,
     render(row) { return h(NText, {}, { default: () => formatBytes(row.upload) }) },
     sorter: (a, b) => a.upload - b.upload,
   },
   {
-    title: '下载',
+    title: t('connections.download'),
     key: 'download',
-    width: 90,
+    width: 110,
     render(row) { return h(NText, {}, { default: () => formatBytes(row.download) }) },
     sorter: (a, b) => a.download - b.download,
   },
   {
-    title: '开始时间',
+    title: t('connections.startTime'),
     key: 'start',
     width: 160,
     render(row) {
@@ -152,7 +154,7 @@ const columns: DataTableColumns<Connection> = [
       }, { default: () => '✕' })
     },
   },
-]
+])
 
 async function handleCloseOne(id: string) {
   try {
@@ -166,9 +168,9 @@ async function handleCloseAll() {
   closingAll.value = true
   try {
     await kernelApi.closeAllConnections()
-    message.success('已关闭全部连接')
+    message.success(t('connections.closeAll'))
   } catch (err: any) {
-    message.error('关闭失败: ' + (err.message || err))
+    message.error(t('common.failed') + ': ' + (err.message || err))
   } finally {
     closingAll.value = false
   }

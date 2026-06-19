@@ -1,7 +1,6 @@
 package ws
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -31,7 +30,7 @@ func NewRelay(mihomoAddr, secret string) *Relay {
 
 // HandleTraffic relays traffic data from mihomo to frontend clients
 func (r *Relay) HandleTraffic(w http.ResponseWriter, req *http.Request) {
-	r.relay(w, req, "/traffic")
+	r.relay(w, req, "/traffic", "")
 }
 
 // HandleConnections relays connection data from mihomo to frontend clients
@@ -40,17 +39,34 @@ func (r *Relay) HandleConnections(w http.ResponseWriter, req *http.Request) {
 	if interval == "" {
 		interval = "1000"
 	}
-	path := fmt.Sprintf("/connections?interval=%s", interval)
-	r.relay(w, req, path)
+	r.relayWithQuery(w, req, "/connections", map[string]string{"interval": interval})
+}
+
+// HandleLogs relays log data from mihomo to frontend clients
+func (r *Relay) HandleLogs(w http.ResponseWriter, req *http.Request) {
+	level := req.URL.Query().Get("level")
+	if level == "" {
+		level = "info"
+	}
+	r.relayWithQuery(w, req, "/logs", map[string]string{"level": level})
 }
 
 // HandleMemory relays memory data from mihomo to frontend clients
 func (r *Relay) HandleMemory(w http.ResponseWriter, req *http.Request) {
-	r.relay(w, req, "/memory")
+	r.relay(w, req, "/memory", "")
+}
+
+// relayWithQuery connects to mihomo with query parameters
+func (r *Relay) relayWithQuery(w http.ResponseWriter, req *http.Request, mihomoPath string, query map[string]string) {
+	q := url.Values{}
+	for k, v := range query {
+		q.Set(k, v)
+	}
+	r.relay(w, req, mihomoPath, q.Encode())
 }
 
 // relay upgrades the HTTP connection to WebSocket, connects to mihomo, and relays messages
-func (r *Relay) relay(w http.ResponseWriter, req *http.Request, mihomoPath string) {
+func (r *Relay) relay(w http.ResponseWriter, req *http.Request, mihomoPath string, rawQuery string) {
 	// Upgrade frontend connection
 	frontendConn, err := upgrader.Upgrade(w, req, nil)
 	if err != nil {
@@ -61,9 +77,10 @@ func (r *Relay) relay(w http.ResponseWriter, req *http.Request, mihomoPath strin
 
 	// Connect to mihomo WebSocket
 	mihomoURL := url.URL{
-		Scheme: "ws",
-		Host:   r.mihomoAddr,
-		Path:   mihomoPath,
+		Scheme:   "ws",
+		Host:     r.mihomoAddr,
+		Path:     mihomoPath,
+		RawQuery: rawQuery,
 	}
 
 	header := http.Header{}
@@ -90,31 +107,29 @@ func (r *Relay) relay(w http.ResponseWriter, req *http.Request, mihomoPath strin
 		for {
 			msgType, msg, err := backendConn.ReadMessage()
 			if err != nil {
-				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure, websocket.CloseNoStatusReceived) {
 					log.Printf("ws backend read error: %v", err)
 				}
 				return
 			}
 			if err := frontendConn.WriteMessage(msgType, msg); err != nil {
-				log.Printf("ws frontend write error: %v", err)
 				return
 			}
 		}
 	}()
 
-	// Frontend → Backend (for commands like pause/resume)
+	// Frontend → Backend
 	go func() {
 		defer wg.Done()
 		for {
 			msgType, msg, err := frontendConn.ReadMessage()
 			if err != nil {
-				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure, websocket.CloseNoStatusReceived) {
 					log.Printf("ws frontend read error: %v", err)
 				}
 				return
 			}
 			if err := backendConn.WriteMessage(msgType, msg); err != nil {
-				log.Printf("ws backend write error: %v", err)
 				return
 			}
 		}

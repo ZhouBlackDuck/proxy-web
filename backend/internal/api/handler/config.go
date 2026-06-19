@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/go-chi/chi/v5"
 
@@ -16,7 +19,7 @@ import (
 	"github.com/zwforum/proxy-web/internal/substore"
 )
 
-// ConfigHandler handles profile activation, preview, export/import
+// ConfigHandler handles subscription activation, preview, rules/override, export/import
 type ConfigHandler struct {
 	cfg      *config.Config
 	store    *store.FileStore
@@ -31,18 +34,17 @@ func NewConfigHandler(cfg *config.Config, s *store.FileStore) *ConfigHandler {
 		cfg:      cfg,
 		store:    s,
 		pipeline: enhance.NewPipeline(),
-		exporter: export.NewExporter(s, cfg.SubStore.APIAddr),
+		exporter: export.NewExporter(s, cfg.SubStore.APIAddr, cfg),
 		kernel:   kernel.NewClient(cfg.Mihomo.APIAddr, cfg.Mihomo.Secret),
 		subStore: substore.NewClient(cfg.SubStore.APIAddr),
 	}
 }
 
-// Activate switches to a profile, merges config, and applies to mihomo
+// Activate builds merged config for a subscription and pushes it to mihomo
 func (h *ConfigHandler) Activate(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	subName := chi.URLParam(r, "name")
 
-	// Build the merged config
-	finalYaml, err := h.buildConfig(id)
+	finalYaml, err := h.buildConfig(subName)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": "config build failed: " + err.Error(),
@@ -50,7 +52,6 @@ func (h *ConfigHandler) Activate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate
 	if errors := h.pipeline.Validate(finalYaml); len(errors) > 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
 			"error":   "config validation failed",
@@ -59,7 +60,6 @@ func (h *ConfigHandler) Activate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Write to mihomo config file
 	if err := h.store.WriteMihomoConfig(finalYaml); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": "write config file: " + err.Error(),
@@ -67,7 +67,6 @@ func (h *ConfigHandler) Activate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Apply to mihomo via API
 	if err := h.kernel.PutConfig(string(finalYaml)); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{
 			"error": "apply to mihomo: " + err.Error(),
@@ -75,21 +74,24 @@ func (h *ConfigHandler) Activate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update active profile
-	registry, err := h.store.LoadProfileRegistry()
-	if err == nil {
-		registry.ActiveProfileID = id
-		h.store.SaveProfileRegistry(registry)
-	}
+	// PATCH runtime settings that PUT /configs may not apply
+	h.kernel.PatchConfig(map[string]interface{}{
+		"allow-lan":    true,
+		"bind-address": "*",
+	})
 
-	writeJSON(w, http.StatusOK, map[string]string{"message": "profile activated"})
+	// Save active subscription
+	h.cfg.ActiveSubscription = subName
+	h.cfg.Save()
+
+	writeJSON(w, http.StatusOK, map[string]string{"message": "subscription activated"})
 }
 
 // Preview returns the merged config without applying it
 func (h *ConfigHandler) Preview(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	subName := chi.URLParam(r, "name")
 
-	finalYaml, err := h.buildConfig(id)
+	finalYaml, err := h.buildConfig(subName)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": err.Error(),
@@ -97,24 +99,68 @@ func (h *ConfigHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate
-	warnings := h.pipeline.Validate(finalYaml)
-
 	w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	w.Write(finalYaml)
-
-	if len(warnings) > 0 {
-		// Can't set headers after writing body, log instead
-		fmt.Printf("config preview warnings: %v\n", warnings)
-	}
 }
 
-// Export exports a profile as a zip file
-func (h *ConfigHandler) Export(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+// GetSubRules returns global rules for a subscription
+func (h *ConfigHandler) GetSubRules(w http.ResponseWriter, r *http.Request) {
+	subName := chi.URLParam(r, "name")
+	content, _ := h.store.ReadSubRules(subName)
+	w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(content))
+}
 
-	zipData, err := h.exporter.Export(id)
+// UpdateSubRules saves global rules for a subscription
+func (h *ConfigHandler) UpdateSubRules(w http.ResponseWriter, r *http.Request) {
+	subName := chi.URLParam(r, "name")
+	var body struct {
+		Content string `json:"content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	if err := h.store.WriteSubRules(subName, body.Content); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"message": "rules saved"})
+}
+
+// GetSubOverride returns global override for a subscription
+func (h *ConfigHandler) GetSubOverride(w http.ResponseWriter, r *http.Request) {
+	subName := chi.URLParam(r, "name")
+	content, _ := h.store.ReadSubOverride(subName)
+	w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(content))
+}
+
+// UpdateSubOverride saves global override for a subscription
+func (h *ConfigHandler) UpdateSubOverride(w http.ResponseWriter, r *http.Request) {
+	subName := chi.URLParam(r, "name")
+	var body struct {
+		Content string `json:"content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	if err := h.store.WriteSubOverride(subName, body.Content); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"message": "override saved"})
+}
+
+// Export exports a subscription as a zip file
+func (h *ConfigHandler) Export(w http.ResponseWriter, r *http.Request) {
+	subName := chi.URLParam(r, "name")
+
+	zipData, err := h.exporter.ExportSubscription(subName)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": err.Error(),
@@ -123,39 +169,52 @@ func (h *ConfigHandler) Export(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=profile-%s.zip", id))
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=sub-%s.zip", subName))
 	w.WriteHeader(http.StatusOK)
 	w.Write(zipData)
 }
 
-// Import imports a profile from a zip file
-func (h *ConfigHandler) Import(w http.ResponseWriter, r *http.Request) {
-	// Parse multipart form
-	if err := r.ParseMultipartForm(32 << 20); err != nil { // 32MB max
-		writeJSON(w, http.StatusBadRequest, map[string]string{
-			"error": "invalid multipart form",
+// ExportAll exports all platform config + optionally all subscriptions
+func (h *ConfigHandler) ExportAll(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		TestSites []map[string]interface{} `json:"testSites"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+
+	zipData, err := h.exporter.ExportAll(req.TestSites)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": err.Error(),
 		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=proxy-web-config-%s.zip", time.Now().Format("2006-01-02")))
+	w.WriteHeader(http.StatusOK)
+	w.Write(zipData)
+}
+
+// Import imports subscriptions from a zip file
+func (h *ConfigHandler) Import(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid multipart form"})
 		return
 	}
 
 	file, _, err := r.FormFile("file")
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{
-			"error": "missing file field",
-		})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing file field"})
 		return
 	}
 	defer file.Close()
 
 	zipData, err := io.ReadAll(file)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{
-			"error": "read file: " + err.Error(),
-		})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "read file: " + err.Error()})
 		return
 	}
 
-	// Check if force import subs
 	var forceImportSubs *bool
 	if r.FormValue("importSubscriptions") == "true" {
 		t := true
@@ -167,50 +226,43 @@ func (h *ConfigHandler) Import(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.exporter.Import(zipData, forceImportSubs)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{
-			"error": err.Error(),
-		})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 
 	writeJSON(w, http.StatusOK, result)
 }
 
-// buildConfig runs the full config merge pipeline for a profile
-func (h *ConfigHandler) buildConfig(profileID string) ([]byte, error) {
-	// Load profile
-	registry, err := h.store.LoadProfileRegistry()
-	if err != nil {
-		return nil, fmt.Errorf("load profiles: %w", err)
-	}
+// GetActiveSubscription returns the currently active subscription name
+func (h *ConfigHandler) GetActiveSubscription(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{
+		"activeSubscription": h.cfg.ActiveSubscription,
+	})
+}
 
-	var profileName, subscriptionName string
-	for _, p := range registry.Profiles {
-		if p.ID == profileID {
-			profileName = p.Name
-			subscriptionName = p.SubscriptionName
-			break
-		}
-	}
-	if profileName == "" {
-		return nil, fmt.Errorf("profile %s not found", profileID)
-	}
-
+// buildConfig runs the full config merge pipeline for a subscription
+// Pipeline order: subscription → rules(prepend) → override(merge) → defaults → ports
+func (h *ConfigHandler) buildConfig(subscriptionName string) ([]byte, error) {
 	// 1. Get subscription yaml from Sub-Store
 	var subYaml string
-	if subscriptionName != "" {
-		downloaded, err := h.subStore.DownloadSubscription(subscriptionName, "ClashMeta")
+	if subscriptionName != "" && subscriptionName != "__empty__" {
+		downloaded, err := h.subStore.GetRawContent(subscriptionName)
 		if err != nil {
-			return nil, fmt.Errorf("download subscription %s: %w", subscriptionName, err)
+			// If subscription not found, use minimal empty config
+			subYaml = "proxies: []\nproxy-groups: []\nrules: []"
+		} else {
+			subYaml = downloaded
 		}
-		subYaml = downloaded
+	} else {
+		// Empty subscription - use minimal empty config
+		subYaml = "proxies: []\nproxy-groups: []\nrules: []"
 	}
 
-	// 2. Read global override
-	overrideYaml, _ := h.store.ReadOverride(profileID)
+	// 2. Read global rules (stored under __global__ key)
+	globalRules, _ := h.store.ReadSubRules("__global__")
 
-	// 3. Read global rules
-	globalRules, _ := h.store.ReadRules(profileID)
+	// 3. Read global override (stored under __global__ key)
+	overrideYaml, _ := h.store.ReadSubOverride("__global__")
 
 	// 4. Build port settings from platform config
 	portSettings := map[string]enhance.PortSetting{
@@ -221,8 +273,25 @@ func (h *ConfigHandler) buildConfig(profileID string) ([]byte, error) {
 		"tproxy-port": {Enabled: h.cfg.Ports.TProxyPort.Enabled, Port: h.cfg.Ports.TProxyPort.Port},
 	}
 
-	// 5. Run pipeline with port settings
-	return h.pipeline.BuildWithPorts(subYaml, overrideYaml, globalRules, portSettings)
+	// 5. Run pipeline: subscription → rules → override → defaults → ports
+	finalYaml, err := h.pipeline.BuildWithPorts(subYaml, overrideYaml, globalRules, portSettings)
+	if err != nil {
+		return nil, err
+	}
+
+	// 6. Override external-controller and secret to ensure platform can always connect
+	var configMap map[string]interface{}
+	if err := yaml.Unmarshal(finalYaml, &configMap); err == nil {
+		configMap["external-controller"] = h.cfg.Mihomo.APIAddr
+		if h.cfg.Mihomo.Secret != "" {
+			configMap["secret"] = h.cfg.Mihomo.Secret
+		}
+		if overridden, err := yaml.Marshal(configMap); err == nil {
+			finalYaml = overridden
+		}
+	}
+
+	return finalYaml, nil
 }
 
 // ValidateConfig validates a yaml config
@@ -247,7 +316,7 @@ func (h *ConfigHandler) GetPorts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, h.cfg.Ports)
 }
 
-// UpdatePorts updates port settings, saves to settings.json, and re-applies config to kernel
+// UpdatePorts updates port settings and re-applies config if a subscription is active
 func (h *ConfigHandler) UpdatePorts(w http.ResponseWriter, r *http.Request) {
 	var ports config.PortSettings
 	if err := json.NewDecoder(r.Body).Decode(&ports); err != nil {
@@ -255,7 +324,6 @@ func (h *ConfigHandler) UpdatePorts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Save to settings
 	h.cfg.Ports = ports
 	if err := h.cfg.Save(); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{
@@ -264,16 +332,38 @@ func (h *ConfigHandler) UpdatePorts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If there's an active profile, regenerate and push config
-	registry, err := h.store.LoadProfileRegistry()
-	if err == nil && registry.ActiveProfileID != "" {
-		finalYaml, err := h.buildConfig(registry.ActiveProfileID)
+	// If there's an active subscription, regenerate and push config
+	if h.cfg.ActiveSubscription != "" {
+		finalYaml, err := h.buildConfig(h.cfg.ActiveSubscription)
 		if err == nil {
-			// Write to file and push to kernel
 			h.store.WriteMihomoConfig(finalYaml)
 			h.kernel.PutConfig(string(finalYaml))
 		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "ports updated"})
+}
+
+// GetExportSetting returns the platform-level export include subscriptions setting
+func (h *ConfigHandler) GetExportSetting(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]bool{
+		"includeSubscriptions": h.cfg.ExportIncludeSubscriptions,
+	})
+}
+
+// UpdateExportSetting updates the platform-level export setting
+func (h *ConfigHandler) UpdateExportSetting(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		IncludeSubscriptions bool `json:"includeSubscriptions"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	h.cfg.ExportIncludeSubscriptions = body.IncludeSubscriptions
+	if err := h.cfg.Save(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"message": "export setting updated"})
 }

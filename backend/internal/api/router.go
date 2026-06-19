@@ -37,6 +37,7 @@ func NewRouter(cfg *config.Config, store *store.FileStore, pm *process.Manager) 
 	healthH := handler.NewHealthHandler(pm)
 	profileH := handler.NewProfileHandler(store)
 	configH := handler.NewConfigHandler(cfg, store)
+	iconH := handler.NewIconHandler(cfg)
 	kernelH := handler.NewKernelHandler(cfg)
 	subH := handler.NewSubscriptionHandler(cfg)
 	testH := handler.NewTestHandler(cfg.Mihomo.APIAddr, cfg.Mihomo.Secret)
@@ -48,6 +49,7 @@ func NewRouter(cfg *config.Config, store *store.FileStore, pm *process.Manager) 
 	r.Post("/api/auth/setup", authH.Setup)
 	r.Get("/api/auth/status", authH.Status)
 	r.Get("/api/health", healthH.Health)
+	r.Get("/api/icons/{filename}", iconH.GetIcon)
 
 	// Protected routes
 	r.Group(func(r chi.Router) {
@@ -66,25 +68,20 @@ func NewRouter(cfg *config.Config, store *store.FileStore, pm *process.Manager) 
 		r.Post("/api/process/sub-store/stop", healthH.StopSubStore)
 		r.Post("/api/process/sub-store/restart", healthH.RestartSubStore)
 
-		// Profiles CRUD
+		// Profiles CRUD (kept for backward compatibility)
 		r.Get("/api/profiles", profileH.List)
 		r.Post("/api/profiles", profileH.Create)
 		r.Get("/api/profiles/{id}", profileH.Get)
 		r.Put("/api/profiles/{id}", profileH.Update)
 		r.Delete("/api/profiles/{id}", profileH.Delete)
-		r.Get("/api/profiles/{id}/rules", profileH.GetRules)
-		r.Put("/api/profiles/{id}/rules", profileH.UpdateRules)
-		r.Get("/api/profiles/{id}/override", profileH.GetOverride)
-		r.Put("/api/profiles/{id}/override", profileH.UpdateOverride)
 
-		// Profile activation, preview, export/import (uses config merge pipeline)
-		r.Post("/api/profiles/{id}/activate", configH.Activate)
-		r.Get("/api/profiles/{id}/preview", configH.Preview)
-		r.Post("/api/profiles/{id}/export", configH.Export)
-		r.Post("/api/profiles/import", configH.Import)
+		// Config validation and port management
 		r.Post("/api/config/validate", configH.ValidateConfig)
 		r.Get("/api/config/ports", configH.GetPorts)
 		r.Put("/api/config/ports", configH.UpdatePorts)
+		r.Get("/api/config/export-setting", configH.GetExportSetting)
+		r.Post("/api/config/export", configH.ExportAll)
+		r.Put("/api/config/export-setting", configH.UpdateExportSetting)
 
 		// Subscriptions (proxied to Sub-Store)
 		r.Get("/api/subscriptions", subH.List)
@@ -95,6 +92,22 @@ func NewRouter(cfg *config.Config, store *store.FileStore, pm *process.Manager) 
 		r.Post("/api/subscriptions/{name}/sync", subH.Sync)
 		r.Get("/api/subscriptions/{name}/download", subH.Download)
 		r.Get("/api/subscriptions/{name}/flow", subH.Flow)
+
+		// Subscription config management (rules, override, activate, preview, export)
+		r.Post("/api/subscriptions/{name}/activate", configH.Activate)
+		r.Get("/api/subscriptions/{name}/preview", configH.Preview)
+		r.Get("/api/subscriptions/{name}/rules", configH.GetSubRules)
+		r.Put("/api/subscriptions/{name}/rules", configH.UpdateSubRules)
+		r.Get("/api/subscriptions/{name}/override", configH.GetSubOverride)
+		r.Put("/api/subscriptions/{name}/override", configH.UpdateSubOverride)
+		r.Post("/api/subscriptions/{name}/export", configH.Export)
+		r.Post("/api/subscriptions/import", configH.Import)
+		r.Get("/api/subscriptions/active", configH.GetActiveSubscription)
+
+		// Icon management
+		r.Post("/api/icons/upload", iconH.UploadIcon)
+		r.Get("/api/icons", iconH.ListIcons)
+		r.Delete("/api/icons", iconH.DeleteIcon)
 
 		// Kernel API (dedicated handlers)
 		r.Get("/api/kernel/version", kernelH.GetVersion)
@@ -128,18 +141,22 @@ func NewRouter(cfg *config.Config, store *store.FileStore, pm *process.Manager) 
 		r.Post("/api/geo/update", kernelH.GeoUpdate)
 
 		// Connectivity test
-		r.Get("/api/test", testH.TestAll)
-		r.Post("/api/test", testH.TestSingle)
+		r.Post("/api/test", testH.TestAll)
+		r.Post("/api/test/single", testH.TestSingle)
 
 		// Logs (file-based)
 		r.Get("/api/logs", logH.GetLogs)
 		r.Delete("/api/logs", logH.ClearLogs)
 
 		// WebSocket relay (traffic, connections, memory — logs use file-based HTTP API)
-		r.Get("/api/ws/traffic", wsRelay.HandleTraffic)
-		r.Get("/api/ws/connections", wsRelay.HandleConnections)
-		r.Get("/api/ws/memory", wsRelay.HandleMemory)
+		// Note: WS routes are outside auth middleware because browser WebSocket
+		// cannot set Authorization headers. The relay itself authenticates to mihomo.
 	})
+
+	r.Get("/api/ws/traffic", wsRelay.HandleTraffic)
+	r.Get("/api/ws/connections", wsRelay.HandleConnections)
+	r.Get("/api/ws/memory", wsRelay.HandleMemory)
+	r.Get("/api/ws/logs", wsRelay.HandleLogs)
 
 	return r
 }

@@ -117,6 +117,21 @@ func (c *Client) GetSubscription(name string) (*Subscription, error) {
 	return &resp.Data, nil
 }
 
+// GetRawContent returns the raw content of a local subscription
+// For local subscriptions, this returns the stored content directly
+// without going through format conversion
+func (c *Client) GetRawContent(name string) (string, error) {
+	sub, err := c.GetSubscription(name)
+	if err != nil {
+		return "", err
+	}
+	if sub.Source == "local" && sub.Content != "" {
+		return sub.Content, nil
+	}
+	// For URL subscriptions, fall back to ClashMeta conversion
+	return c.DownloadSubscription(name, "ClashMeta")
+}
+
 // CreateSubscription creates a new subscription
 func (c *Client) CreateSubscription(sub Subscription) error {
 	return c.doJSON("POST", "/api/subs", sub, nil)

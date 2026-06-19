@@ -22,6 +22,42 @@ func NewTestHandler(mihomoAddr, secret string) *TestHandler {
 	}
 }
 
+// getProxyAddr queries mihomo for the mixed-port to use as proxy
+func (h *TestHandler) getProxyAddr() string {
+	client := &http.Client{Timeout: 3 * time.Second}
+	url := fmt.Sprintf("http://%s/configs", h.mihomoAddr)
+	req, _ := http.NewRequest("GET", url, nil)
+	if h.secret != "" {
+		req.Header.Set("Authorization", "Bearer "+h.secret)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "127.0.0.1:7890" // fallback
+	}
+	defer resp.Body.Close()
+
+	var cfg struct {
+		MixedPort int `json:"mixed-port"`
+		Port      int `json:"port"`
+		SocksPort int `json:"socks-port"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&cfg); err != nil {
+		return "127.0.0.1:7890"
+	}
+
+	port := cfg.MixedPort
+	if port == 0 {
+		port = cfg.Port
+	}
+	if port == 0 {
+		port = cfg.SocksPort
+	}
+	if port == 0 {
+		port = 7890
+	}
+	return fmt.Sprintf("127.0.0.1:%d", port)
+}
+
 type TestSite struct {
 	Name string `json:"name"`
 	URL  string `json:"url"`
@@ -40,17 +76,23 @@ type TestResult struct {
 // DefaultSites returns the default list of test sites
 var DefaultSites = []TestSite{
 	{Name: "Google", URL: "https://www.google.com/generate_204", Icon: "🔍"},
-	{Name: "YouTube", URL: "https://www.youtube.com", Icon: "📺"},
 	{Name: "GitHub", URL: "https://api.github.com", Icon: "🐙"},
-	{Name: "Cloudflare", URL: "https://1.1.1.1/cdn-cgi/trace", Icon: "☁️"},
-	{Name: "Baidu", URL: "https://www.baidu.com", Icon: "🅱️"},
-	{Name: "Bilibili", URL: "https://www.bilibili.com", Icon: "📺"},
 }
 
-// TestAll tests connectivity to all default sites through the proxy
+// TestAll tests connectivity to sites through the proxy
+// Accepts optional JSON body with custom sites array
 func (h *TestHandler) TestAll(w http.ResponseWriter, r *http.Request) {
-	// Parse custom sites from query or use defaults
 	sites := DefaultSites
+
+	// Try to parse custom sites from request body
+	if r.Body != nil && r.ContentLength > 0 {
+		var req struct {
+			Sites []TestSite `json:"sites"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil && len(req.Sites) > 0 {
+			sites = req.Sites
+		}
+	}
 
 	results := make([]TestResult, len(sites))
 	var wg sync.WaitGroup
@@ -92,11 +134,13 @@ func (h *TestHandler) testSite(site TestSite) TestResult {
 		Latency: -1,
 	}
 
+	proxyAddr := h.getProxyAddr()
+
 	// Create HTTP client that uses the mihomo proxy
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 		Transport: &http.Transport{
-			Proxy: http.ProxyURL(mustParseURL(fmt.Sprintf("http://%s", h.mihomoAddr))),
+			Proxy: http.ProxyURL(mustParseURL(fmt.Sprintf("http://%s", proxyAddr))),
 		},
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse // Don't follow redirects

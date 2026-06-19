@@ -21,11 +21,6 @@ const router = createRouter({
       component: () => import('../views/SubscriptionsView.vue'),
     },
     {
-      path: '/profiles',
-      name: 'profiles',
-      component: () => import('../views/ProfilesView.vue'),
-    },
-    {
       path: '/proxies',
       name: 'proxies',
       component: () => import('../views/ProxiesView.vue'),
@@ -63,7 +58,6 @@ router.beforeEach(async (to, _from, next) => {
 
   const authStore = useAuthStore()
 
-  // On first navigation, verify auth status with server
   if (!authChecked) {
     authChecked = true
     await authStore.checkAuth()

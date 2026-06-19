@@ -249,11 +249,19 @@ func (c *Client) TestDelay(name, url string, timeout int) (map[string]int, error
 
 // GetGroups returns all proxy groups
 func (c *Client) GetGroups() (*ProxiesResponse, error) {
-	var resp ProxiesResponse
-	if err := c.doJSON("GET", "/group", nil, &resp); err != nil {
+	// mihomo /group returns proxies as an array, not a map
+	var raw struct {
+		Proxies []Proxy `json:"proxies"`
+	}
+	if err := c.doJSON("GET", "/group", nil, &raw); err != nil {
 		return nil, err
 	}
-	return &resp, nil
+	// Convert array to map for consistent frontend handling
+	proxies := make(map[string]Proxy)
+	for _, p := range raw.Proxies {
+		proxies[p.Name] = p
+	}
+	return &ProxiesResponse{Proxies: proxies}, nil
 }
 
 // TestGroupDelay tests all nodes in a group

@@ -16,8 +16,9 @@ export interface TestResult {
 }
 
 export const testApi = {
-  async testAll(): Promise<TestResult[]> {
-    const { data } = await client.get('/test')
+  async testAll(sites?: TestSite[]): Promise<TestResult[]> {
+    const body = sites && sites.length > 0 ? { sites } : undefined
+    const { data } = await client.post('/test', body || {})
     return data.results
   },
 

@@ -22,6 +22,9 @@ COPY backend/ .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
     -ldflags="-s -w -X main.Version=$(date +%Y%m%d) -X main.Commit=docker" \
     -o /webui-server ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
+    -ldflags="-s -w" \
+    -o /reset-password ./cmd/reset-password
 
 # ========================================
 # Stage 3: Final Image (multi-arch: amd64 + arm64)
@@ -42,7 +45,8 @@ RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
     nginx \
     nodejs \
     curl \
-    bash
+    bash \
+    gettext
 
 # mihomo: copy from official image (Docker auto-resolves amd64/arm64)
 COPY --from=metacubex/mihomo:latest /mihomo /opt/mihomo/mihomo
@@ -53,12 +57,12 @@ RUN chmod +x /opt/mihomo/mihomo
 RUN mkdir -p /app/sub-store \
     && curl -fsSL "https://github.com/sub-store-org/Sub-Store/releases/download/${SUBSTORE_VERSION}/sub-store.bundle.js" \
        -o /app/sub-store/sub-store.bundle.js
-ENV SUB_STORE_BACKEND_API_PORT=3001
-ENV SUB_STORE_BACKEND_API_HOST=127.0.0.1
-ENV SUB_STORE_DATA_DIR=/data/sub-store
+ENV SUB_STORE_BODY_JSON_LIMIT=10mb
+ENV NGINX_CLIENT_MAX_BODY_SIZE=10m
 
 # Copy backend binary
 COPY --from=backend-builder /webui-server /app/webui-server
+COPY --from=backend-builder /reset-password /usr/local/bin/reset-password
 
 # Copy frontend build to Nginx
 COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html

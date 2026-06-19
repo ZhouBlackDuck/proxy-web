@@ -144,11 +144,13 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useMessage, useDialog, type UploadFileInfo } from 'naive-ui'
 import AppLayout from '../components/layout/AppLayout.vue'
 import { profileApi, type Profile } from '../api/profiles'
 import { subscriptionApi, type Subscription } from '../api/subscriptions'
 
+const { t } = useI18n()
 const message = useMessage()
 const dialog = useDialog()
 
@@ -254,17 +256,31 @@ async function handleActivate(id: string) {
 
 function handleDelete(profile: Profile) {
   dialog.warning({
-    title: '确认删除',
-    content: `确定删除 Profile「${profile.name}」吗？`,
-    positiveText: '删除',
-    negativeText: '取消',
+    title: t('common.confirm'),
+    content: t('profiles.confirmDelete', { name: profile.name }),
+    positiveText: t('common.delete'),
+    negativeText: t('common.cancel'),
     onPositiveClick: async () => {
       try {
+        const wasActive = profile.id === activeId.value
         await profileApi.delete(profile.id)
-        message.success('已删除')
+        message.success(t('subscriptions.deleted'))
         await fetchAll()
+        // If deleted profile was active, activate another one
+        if (wasActive) {
+          const remaining = profiles.value.filter(p => p.id !== profile.id)
+          if (remaining.length > 0) {
+            await profileApi.activate(remaining[0].id)
+            activeId.value = remaining[0].id
+            message.success(t('subscriptions.activated') + ': ' + remaining[0].name)
+          } else {
+            // No profiles left, do empty activation to clear kernel state
+            await profileApi.activate('')
+            activeId.value = ''
+          }
+        }
       } catch (err: any) {
-        message.error('删除失败: ' + (err.message || err))
+        message.error(t('common.failed') + ': ' + (err.message || err))
       }
     },
   })

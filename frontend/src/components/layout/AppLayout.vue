@@ -69,7 +69,6 @@ const { t, locale } = useI18n()
 const menuOptions = computed(() => [
   { label: t('nav.dashboard'), key: 'dashboard' },
   { label: t('nav.subscriptions'), key: 'subscriptions' },
-  { label: t('nav.profiles'), key: 'profiles' },
   { label: t('nav.proxies'), key: 'proxies' },
   { label: t('nav.rules'), key: 'rules' },
   { label: t('nav.connections'), key: 'connections' },

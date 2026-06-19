@@ -93,7 +93,7 @@
                     <n-text>{{ formatFileSize(f.size) }}</n-text>
                     <n-text depth="3" style="margin-left: 8px; font-size: 11px">{{ formatDateTime(f.updatedAt) }}</n-text>
                   </template>
-                  <n-text v-else type="error">缺失</n-text>
+                  <n-text v-else type="error">{{ t('settings.missing') }}</n-text>
                 </n-descriptions-item>
               </n-descriptions>
               <n-button
@@ -110,10 +110,10 @@
 
         <!-- Log Level -->
         <n-gi span="2 m:1">
-          <n-card title="日志级别" size="small" style="height: 100%">
+          <n-card :title="t('settings.logLevel')" size="small" style="height: 100%">
             <n-space vertical :size="12">
               <n-text depth="3">
-                控制 mihomo 内核输出的日志级别，修改后实时生效。
+                {{ t('settings.logLevelHint') }}
               </n-text>
               <n-space align="center" :size="8">
                 <n-select

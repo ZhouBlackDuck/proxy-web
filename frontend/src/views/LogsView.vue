@@ -4,37 +4,30 @@
       <!-- Header -->
       <n-space justify="space-between" align="center">
         <n-text strong style="font-size: 18px">{{ t('logs.title') }}</n-text>
-        <n-space align="center" :size="8">
-          <n-button
-            :type="autoRefresh ? 'primary' : 'default'"
+        <n-space :size="8">
+          <n-select
+            v-model:value="logLevel"
+            :options="levelOptions"
+            style="width: 120px"
             size="small"
-            @click="autoRefresh = !autoRefresh"
+            @update:value="handleLevelChange"
+          />
+          <n-input
+            v-model:value="searchText"
+            :placeholder="t('logs.searchPlaceholder')"
+            clearable
+            style="width: 240px"
+            size="small"
           >
-            <template #icon>
-              <span>{{ autoRefresh ? '⏸' : '▶' }}</span>
+            <template #suffix>
+              <n-text depth="3" style="font-size: 11px">{{ filteredLogs.length }}</n-text>
             </template>
-            {{ autoRefresh ? t('logs.live') : t('logs.paused') }}
+          </n-input>
+          <n-button :type="autoScroll ? 'primary' : 'default'" size="small" @click="autoScroll = !autoScroll">
+            {{ autoScroll ? t('logs.autoScroll') : t('logs.manualScroll') }}
           </n-button>
-          <n-button size="small" @click="isDescending = !isDescending">
-            {{ isDescending ? '↓ 降序' : '↑ 升序' }}
-          </n-button>
-          <n-button size="small" @click="clearLogs">{{ t('logs.clear') }}</n-button>
+          <n-button size="small" @click="logStore.clearLogs()">{{ t('logs.clear') }}</n-button>
         </n-space>
-      </n-space>
-
-      <!-- Filter bar -->
-      <n-space align="center" :size="8">
-        <n-input
-          v-model:value="searchText"
-          :placeholder="t('logs.searchPlaceholder')"
-          clearable
-          style="width: 300px"
-          size="small"
-        >
-          <template #suffix>
-            <n-text depth="3" style="font-size: 11px">{{ filteredLogs.length }}</n-text>
-          </template>
-        </n-input>
       </n-space>
 
       <!-- Log list -->
@@ -48,15 +41,13 @@
             {{ t('logs.waiting') }}
           </div>
           <div
-            v-for="(log, i) in displayLogs"
+            v-for="(log, i) in filteredLogs"
             :key="i"
             class="log-entry"
           >
-            <div class="log-header">
-              <span class="log-time">{{ log.time }}</span>
-              <span class="log-type" :class="'log-type-' + log.type">{{ log.type.toUpperCase() }}</span>
-            </div>
-            <div class="log-payload" v-html="highlightPayload(log.payload)"></div>
+            <span class="log-time">{{ log.time }}</span>
+            <span class="log-type" :class="'log-type-' + log.type">{{ log.type.toUpperCase() }}</span>
+            <span class="log-payload" v-html="highlightPayload(log.payload)"></span>
           </div>
         </div>
       </n-card>
@@ -65,30 +56,111 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '../components/layout/AppLayout.vue'
-import client from '../api/client'
+import { useWebSocket } from '../composables/useWebSocket'
+import { useLogStore, type LogEntry } from '../stores/logs'
 
 const { t } = useI18n()
+const logStore = useLogStore()
 
-interface LogEntry {
-  time: string
-  type: string
-  payload: string
-}
-
+const logLevel = ref('info')
 const searchText = ref('')
-const autoRefresh = ref(true)
-const isDescending = ref(false)
-const logs = ref<LogEntry[]>([])
+const autoScroll = ref(true)
 const logContainer = ref<HTMLElement | null>(null)
 
-let refreshTimer: ReturnType<typeof setInterval> | null = null
+const levelOptions = [
+  { label: 'Debug', value: 'debug' },
+  { label: 'Info', value: 'info' },
+  { label: 'Warning', value: 'warning' },
+  { label: 'Error', value: 'error' },
+]
 
-// Client-side search filtering
+let wsDisconnect: (() => void) | null = null
+
+function connectLogs() {
+  if (wsDisconnect) wsDisconnect()
+
+  const { disconnect } = useWebSocket({
+    url: `/api/ws/logs?level=${logLevel.value}`,
+    onMessage: (data: any) => {
+      if (typeof data === 'string') {
+        const entry = parseLogLine(data)
+        if (entry) logStore.addLog(entry)
+      } else if (data && data.type) {
+        logStore.addLog({
+          time: data.time || formatNow(),
+          type: normalizeLevel(data.type),
+          payload: data.payload || '',
+        })
+      }
+    },
+  })
+  wsDisconnect = disconnect
+}
+
+// Auto-scroll when new logs arrive
+watch(() => logStore.logs.length, () => {
+  if (autoScroll.value) {
+    nextTick(() => {
+      if (logContainer.value) {
+        logContainer.value.scrollTop = logContainer.value.scrollHeight
+      }
+    })
+  }
+})
+
+function parseLogLine(line: string): LogEntry | null {
+  const match = line.match(/^time="([^"]*)" level=(\w+) msg="(.*)"$/)
+  if (match) {
+    return { time: formatTime(match[1]), type: normalizeLevel(match[2]), payload: match[3] }
+  }
+  if (line.trim()) {
+    return { time: formatNow(), type: guessLevel(line), payload: line }
+  }
+  return null
+}
+
+function formatTime(iso: string): string {
+  const idx = iso.indexOf('T')
+  if (idx === -1) return iso
+  let timePart = iso.substring(idx + 1)
+  const dotIdx = timePart.indexOf('.')
+  if (dotIdx !== -1) timePart = timePart.substring(0, dotIdx)
+  return timePart
+}
+
+function formatNow(): string {
+  const d = new Date()
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
+}
+
+function normalizeLevel(level: string): string {
+  switch (level.toLowerCase()) {
+    case 'error': case 'fatal': case 'panic': return 'error'
+    case 'warning': case 'warn': return 'warning'
+    case 'debug': return 'debug'
+    default: return 'info'
+  }
+}
+
+function guessLevel(line: string): string {
+  const lower = line.toLowerCase()
+  if (lower.includes('error') || lower.includes('fatal')) return 'error'
+  if (lower.includes('warn')) return 'warning'
+  if (lower.includes('debug')) return 'debug'
+  return 'info'
+}
+
+const LOG_LEVEL_ORDER: Record<string, number> = { debug: 0, info: 1, warning: 2, error: 3 }
+
 const filteredLogs = computed(() => {
-  let result = logs.value
+  let result = logStore.logs
+  // Filter by level (show selected level and above)
+  const minLevel = LOG_LEVEL_ORDER[logLevel.value] ?? 0
+  result = result.filter(l => (LOG_LEVEL_ORDER[l.type] ?? 1) >= minLevel)
+  // Filter by search text
   if (searchText.value) {
     const q = searchText.value.toLowerCase()
     result = result.filter(
@@ -98,18 +170,11 @@ const filteredLogs = computed(() => {
   return result
 })
 
-// Apply sort order
-const displayLogs = computed(() => {
-  return isDescending.value ? [...filteredLogs.value].reverse() : filteredLogs.value
-})
-
 function highlightPayload(text: string): string {
-  if (!searchText.value.trim()) {
-    return escapeHtml(text)
-  }
-  const escapedSearch = escapeHtml(searchText.value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  if (!searchText.value.trim()) return escapeHtml(text)
+  const escaped = escapeHtml(searchText.value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   return escapeHtml(text).replace(
-    new RegExp(`(${escapedSearch})`, 'gi'),
+    new RegExp(`(${escaped})`, 'gi'),
     '<mark style="background:rgba(255,235,59,0.3);border-radius:2px;padding:0 2px">$1</mark>'
   )
 }
@@ -118,121 +183,40 @@ function escapeHtml(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
-async function fetchLogs() {
-  try {
-    const { data } = await client.get('/logs', { params: { limit: 500 } })
-    const newLogs: LogEntry[] = data.logs || []
-    // Append new logs, deduplicate by keeping last 500
-    if (logs.value.length === 0) {
-      logs.value = newLogs
-    } else {
-      // Merge: keep existing + add new ones that aren't already there
-      const existingSet = new Set(logs.value.map(l => `${l.time}|${l.payload}`))
-      const fresh = newLogs.filter(l => !existingSet.has(`${l.time}|${l.payload}`))
-      if (fresh.length > 0) {
-        logs.value = [...logs.value, ...fresh].slice(-500)
-      }
-    }
-    nextTick(() => {
-      if (logContainer.value && !isDescending.value) {
-        const el = logContainer.value
-        const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
-        if (isNearBottom) {
-          el.scrollTop = el.scrollHeight
-        }
-      }
-    })
-  } catch {
-    // ignore
-  }
+function handleLevelChange() {
+  connectLogs()
 }
 
-function clearLogs() {
-  client.delete('/logs').then(() => {
-    logs.value = []
-  }).catch(() => {
-    // ignore
-  })
-}
-
-function startAutoRefresh() {
-  stopAutoRefresh()
-  refreshTimer = setInterval(() => {
-    if (autoRefresh.value) {
-      fetchLogs()
-    }
-  }, 2000)
-}
-
-function stopAutoRefresh() {
-  if (refreshTimer) {
-    clearInterval(refreshTimer)
-    refreshTimer = null
-  }
-}
-
-onMounted(() => {
-  fetchLogs()
-  startAutoRefresh()
+onMounted(async () => {
+  // Load historical logs from file first
+  const token = localStorage.getItem('token') || ''
+  await logStore.loadHistory(token)
+  // Then connect WS for real-time
+  connectLogs()
 })
 
 onUnmounted(() => {
-  stopAutoRefresh()
-})
-
-watch(autoRefresh, (val) => {
-  if (val) startAutoRefresh()
-  else stopAutoRefresh()
+  if (wsDisconnect) wsDisconnect()
 })
 </script>
 
 <style scoped>
 .log-entry {
-  padding: 6px 12px;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.08);
-  user-select: text;
-}
-.log-entry:hover {
-  background: rgba(128, 128, 128, 0.04);
-}
-.log-header {
+  padding: 3px 12px;
+  border-bottom: 1px solid rgba(128,128,128,0.06);
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
-  margin-bottom: 2px;
 }
-.log-time {
-  color: #888;
-  font-size: 11px;
-}
+.log-entry:hover { background: rgba(128,128,128,0.04); }
+.log-time { color: #666; font-size: 11px; flex-shrink: 0; }
 .log-type {
-  display: inline-block;
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  border-radius: 3px;
-  padding: 1px 6px;
-  letter-spacing: 0.5px;
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  border-radius: 3px; padding: 1px 5px; flex-shrink: 0; letter-spacing: 0.5px;
 }
-.log-type-info {
-  color: #63e2b7;
-  background: rgba(99, 226, 183, 0.12);
-}
-.log-type-warning {
-  color: #f2c97d;
-  background: rgba(242, 201, 125, 0.12);
-}
-.log-type-error {
-  color: #e88080;
-  background: rgba(232, 128, 128, 0.12);
-}
-.log-type-debug {
-  color: #999;
-  background: rgba(128, 128, 128, 0.1);
-}
-.log-payload {
-  color: #ddd;
-  word-break: break-all;
-  overflow-wrap: anywhere;
-}
+.log-type-info { color: #63e2b7; background: rgba(99,226,183,0.1); }
+.log-type-warning { color: #f2c97d; background: rgba(242,201,125,0.1); }
+.log-type-error { color: #e88080; background: rgba(232,128,128,0.1); }
+.log-type-debug { color: #888; background: rgba(128,128,128,0.08); }
+.log-payload { color: #ddd; word-break: break-all; overflow-wrap: anywhere; }
 </style>
