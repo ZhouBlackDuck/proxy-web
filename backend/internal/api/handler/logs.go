@@ -1,108 +1,183 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
-	"regexp"
-	"strconv"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
-	"github.com/zwforum/proxy-web/internal/process"
+	"github.com/zwforum/proxy-web/internal/config"
 )
 
-// LogHandler serves mihomo logs from the log file
+// LogHandler handles log retrieval from server-side storage
 type LogHandler struct {
-	pm *process.Manager
+	cfg *config.Config
 }
 
-func NewLogHandler(pm *process.Manager) *LogHandler {
-	return &LogHandler{pm: pm}
+func NewLogHandler(cfg *config.Config) *LogHandler {
+	return &LogHandler{cfg: cfg}
 }
 
-// LogEntry is a structured log entry
-type LogEntry struct {
-	Time    string `json:"time"`
-	Type    string `json:"type"`
-	Payload string `json:"payload"`
-}
-
-// logrus logfmt pattern: time="..." level=... msg="..."
-var logPattern = regexp.MustCompile(`^time="([^"]*)" level=(\w+) msg="(.*)"$`)
-
-// GetLogs returns the last N lines from the mihomo log file, parsed into structured entries
+// GetLogs returns logs from server-side storage
 func (h *LogHandler) GetLogs(w http.ResponseWriter, r *http.Request) {
-	limitStr := r.URL.Query().Get("limit")
-	limit := 200
-	if limitStr != "" {
-		if n, err := strconv.Atoi(limitStr); err == nil && n > 0 {
-			limit = n
-		}
-	}
-
-	level := r.URL.Query().Get("level")
-
-	lines, err := h.pm.ReadLogs(limit * 2) // read extra to account for filtering
+	// Read logs from file
+	logPath := filepath.Join(h.cfg.DataDir, "mihomo", "mihomo.log")
+	content, err := os.ReadFile(logPath)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{
-			"error": err.Error(),
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"logs": []interface{}{},
 		})
 		return
 	}
 
-	entries := make([]LogEntry, 0, len(lines))
+	// Parse logs
+	lines := strings.Split(string(content), "\n")
+	logs := make([]map[string]interface{}, 0)
+
 	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+
+		// Parse log line: time="..." level=... msg="..."
 		entry := parseLogLine(line)
-		if entry == nil {
-			continue
+		if entry != nil {
+			logs = append(logs, entry)
 		}
-		// Level filter
-		if level != "" && level != "all" && !strings.EqualFold(entry.Type, level) {
-			continue
-		}
-		entries = append(entries, *entry)
-		if len(entries) >= limit {
-			break
-		}
+	}
+
+	// Limit to last 500 logs
+	if len(logs) > 500 {
+		logs = logs[len(logs)-500:]
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"logs":  entries,
-		"total": len(entries),
+		"logs": logs,
 	})
 }
 
-// parseLogLine parses a logrus logfmt line into a LogEntry
-func parseLogLine(line string) *LogEntry {
-	matches := logPattern.FindStringSubmatch(line)
-	if matches != nil {
-		t := formatTime(matches[1])
-		return &LogEntry{
-			Time:    t,
-			Type:    normalizeLevel(matches[2]),
-			Payload: matches[3],
-		}
+// ClearLogs clears the log file
+func (h *LogHandler) ClearLogs(w http.ResponseWriter, r *http.Request) {
+	logPath := filepath.Join(h.cfg.DataDir, "mihomo", "mihomo.log")
+	if err := os.WriteFile(logPath, []byte{}, 0644); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "failed to clear logs",
+		})
+		return
 	}
 
-	// Fallback: try to extract level from unstructured lines
-	entry := &LogEntry{
-		Time:    "",
-		Type:    "info",
-		Payload: line,
+	writeJSON(w, http.StatusOK, map[string]string{
+		"message": "logs cleared",
+	})
+}
+
+func parseLogLine(line string) map[string]interface{} {
+	// Parse: time="..." level=... msg="..."
+	entry := make(map[string]interface{})
+
+	// Extract time
+	if timeMatch := extractField(line, "time"); timeMatch != "" {
+		entry["time"] = formatTime(timeMatch)
+		entry["timestamp"] = parseTimeToUnix(timeMatch)
+	} else {
+		entry["time"] = ""
+		entry["timestamp"] = 0
 	}
 
-	lower := strings.ToLower(line)
-	switch {
-	case strings.Contains(lower, "level=fatal") || strings.Contains(lower, "level=error"):
-		entry.Type = "error"
-	case strings.Contains(lower, "level=warning") || strings.Contains(lower, "level=warn"):
-		entry.Type = "warning"
-	case strings.Contains(lower, "level=debug"):
-		entry.Type = "debug"
+	// Extract level
+	if levelMatch := extractField(line, "level"); levelMatch != "" {
+		entry["type"] = normalizeLevel(levelMatch)
+	} else {
+		entry["type"] = "info"
+	}
+
+	// Extract msg
+	if msgMatch := extractField(line, "msg"); msgMatch != "" {
+		entry["payload"] = msgMatch
+	} else {
+		entry["payload"] = line
 	}
 
 	return entry
 }
 
-// normalizeLevel normalizes log level strings
+func extractField(line, field string) string {
+	// Look for field="value" or field=value
+	prefix := field + "="
+	idx := strings.Index(line, prefix)
+	if idx == -1 {
+		return ""
+	}
+
+	start := idx + len(prefix)
+	if start >= len(line) {
+		return ""
+	}
+
+	// Check if value is quoted
+	if line[start] == '"' {
+		// Find closing quote
+		end := strings.Index(line[start+1:], "\"")
+		if end == -1 {
+			return ""
+		}
+		return line[start+1 : start+1+end]
+	}
+
+	// Find next space
+	end := strings.Index(line[start:], " ")
+	if end == -1 {
+		return line[start:]
+	}
+	return line[start : start+end]
+}
+
+func formatTime(timeStr string) string {
+	// Extract HH:MM:SS from ISO format
+	if idx := strings.Index(timeStr, "T"); idx != -1 {
+		timePart := timeStr[idx+1:]
+		if dotIdx := strings.Index(timePart, "."); dotIdx != -1 {
+			return timePart[:dotIdx]
+		}
+		if zIdx := strings.Index(timePart, "Z"); zIdx != -1 {
+			return timePart[:zIdx]
+		}
+		return timePart
+	}
+	return timeStr
+}
+
+func parseTimeToUnix(timeStr string) int64 {
+	// Parse ISO format: 2026-06-19T05:40:43.123456789Z
+	// Simplified: extract HH:MM:SS and convert to Unix timestamp for today
+	if idx := strings.Index(timeStr, "T"); idx != -1 {
+		timePart := timeStr[idx+1:]
+		if dotIdx := strings.Index(timePart, "."); dotIdx != -1 {
+			timePart = timePart[:dotIdx]
+		}
+		if zIdx := strings.Index(timePart, "Z"); zIdx != -1 {
+			timePart = timePart[:zIdx]
+		}
+		// Parse HH:MM:SS
+		parts := strings.Split(timePart, ":")
+		if len(parts) == 3 {
+			hour := 0
+			minute := 0
+			second := 0
+			fmt.Sscanf(parts[0], "%d", &hour)
+			fmt.Sscanf(parts[1], "%d", &minute)
+			fmt.Sscanf(parts[2], "%d", &second)
+			// Create timestamp for today with this time
+			now := time.Now()
+			t := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, second, 0, now.Location())
+			return t.Unix()
+		}
+	}
+	return time.Now().Unix()
+}
+
 func normalizeLevel(level string) string {
 	switch strings.ToLower(level) {
 	case "error", "fatal", "panic":
@@ -114,33 +189,4 @@ func normalizeLevel(level string) string {
 	default:
 		return "info"
 	}
-}
-
-// ClearLogs truncates the mihomo log file
-func (h *LogHandler) ClearLogs(w http.ResponseWriter, r *http.Request) {
-	if err := h.pm.ClearLogs(); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{
-			"error": err.Error(),
-		})
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"message": "logs cleared"})
-}
-
-// formatTime converts ISO time to a shorter display format
-// "2026-06-17T11:00:40.640330002Z" → "11:00:40"
-func formatTime(t string) string {
-	// Find the time portion after T
-	idx := strings.Index(t, "T")
-	if idx == -1 {
-		return t
-	}
-	timePart := t[idx+1:]
-	// Remove timezone and fractional seconds
-	if dotIdx := strings.Index(timePart, "."); dotIdx != -1 {
-		timePart = timePart[:dotIdx]
-	} else if zIdx := strings.Index(timePart, "Z"); zIdx != -1 {
-		timePart = timePart[:zIdx]
-	}
-	return timePart
 }

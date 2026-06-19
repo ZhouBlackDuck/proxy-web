@@ -194,7 +194,7 @@
           class="icon-grid-item svg-item"
           @click="selectIcon(svg)"
         >
-          <img v-if="svg.startsWith('/api/icons/')" :src="svg" style="width: 24px; height: 24px" />
+          <img v-if="svg.startsWith('/api/icons/')" :src="svg" style="width: 24px; height: 24px" @error="handleIconError($event, i)" />
           <div v-else v-html="svg" style="width: 24px; height: 24px"></div>
           <div class="svg-delete" @click.stop="removeSvg(i)">✕</div>
         </div>
@@ -319,8 +319,40 @@ useWebSocket({
   },
 })
 
+// Validate icon references against server — clean up stale URLs
+// that exist in localStorage/imported data but were deleted on the server.
+async function validateIcons() {
+  try {
+    const token = localStorage.getItem('token') || ''
+    const resp = await fetch('/api/icons', { headers: { Authorization: `Bearer ${token}` } })
+    const data = await resp.json()
+    const validUrls = new Set<string>((data.icons || []).map((i: { url: string }) => i.url))
+
+    let changed = false
+
+    // Clean up uploadedSvgs
+    const validSvgs = uploadedSvgs.value.filter(url => !url.startsWith('/api/icons/') || validUrls.has(url))
+    if (validSvgs.length !== uploadedSvgs.value.length) {
+      uploadedSvgs.value = validSvgs
+      localStorage.setItem('uploadedSvgs', JSON.stringify(validSvgs))
+    }
+
+    // Reset site icons referencing deleted icons
+    for (const site of testSites.value) {
+      if (site.icon && site.icon.startsWith('/api/icons/') && !validUrls.has(site.icon)) {
+        site.icon = ''
+        changed = true
+      }
+    }
+    if (changed) saveSites()
+  } catch {
+    // ignore
+  }
+}
+
 onMounted(async () => {
   await kernelStore.initialize()
+  validateIcons()
   nextTick(() => drawGraph())
 })
 
@@ -531,9 +563,14 @@ async function handleSvgUpload({ file }: any) {
     uploadedSvgs.value.push(iconUrl)
     localStorage.setItem('uploadedSvgs', JSON.stringify(uploadedSvgs.value))
 
-    // Select it
+    // Select it and sync to card immediately
     if (editingSite.value) {
       editingSite.value.icon = iconUrl
+      const idx = editingIndex.value
+      if (idx >= 0 && idx < testSites.value.length) {
+        testSites.value[idx].icon = iconUrl
+        saveSites()
+      }
     }
     showIconPicker.value = false
   } catch (err) {
@@ -544,8 +581,24 @@ async function handleSvgUpload({ file }: any) {
 function selectIcon(icon: string) {
   if (editingSite.value) {
     editingSite.value.icon = icon
+    // Sync icon to card immediately
+    const idx = editingIndex.value
+    if (idx >= 0 && idx < testSites.value.length) {
+      testSites.value[idx].icon = icon
+      saveSites()
+    }
   }
   showIconPicker.value = false
+}
+
+function handleIconError(event: Event, index: number) {
+  // Icon failed to load, use default
+  const target = event.target as HTMLImageElement
+  target.style.display = 'none'
+  // Update the site to use default icon
+  if (editingSite.value && editingSite.value.icon === uploadedSvgs.value[index]) {
+    editingSite.value.icon = ''
+  }
 }
 
 async function removeSvg(index: number) {
@@ -560,11 +613,32 @@ async function removeSvg(index: number) {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` },
       })
+      
+      // Clear browser cache for this icon
+      if ('caches' in window) {
+        const cacheNames = await caches.keys()
+        for (const cacheName of cacheNames) {
+          const cache = await caches.open(cacheName)
+          await cache.delete(iconUrl)
+        }
+      }
     } catch (err) {
       console.error('Failed to delete icon from server:', err)
     }
   }
   
+  // Update any sites using this icon to use default
+  testSites.value.forEach(site => {
+    if (site.icon === iconUrl) {
+      site.icon = ''
+    }
+  })
+  // Also reset the editing copy so the edit form preview updates
+  if (editingSite.value?.icon === iconUrl) {
+    editingSite.value.icon = ''
+  }
+  saveSites()
+
   // Remove from localStorage
   uploadedSvgs.value.splice(index, 1)
   localStorage.setItem('uploadedSvgs', JSON.stringify(uploadedSvgs.value))

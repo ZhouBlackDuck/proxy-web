@@ -13,7 +13,7 @@
           <n-upload :show-file-list="false" accept=".zip" @change="handleImportFile">
             <n-button size="small">{{ t('subscriptions.import') }}</n-button>
           </n-upload>
-          <n-button type="primary" size="small" @click="showCreateModal = true">{{ t('subscriptions.addSubscription') }}</n-button>
+          <n-button type="primary" size="small" @click="openAddModal">{{ t('subscriptions.addSubscription') }}</n-button>
         </n-space>
       </n-space>
 
@@ -237,6 +237,19 @@ function getMoreOptions(_sub: Subscription) {
   ]
 }
 
+function openAddModal() {
+  editingSub.value = null
+  form.value = {
+    name: '',
+    displayName: '',
+    source: 'url',
+    url: '',
+    content: '',
+    ua: '',
+  }
+  showCreateModal.value = true
+}
+
 function handleEditSub(sub: Subscription) {
   editingSub.value = sub
   form.value = {
@@ -252,6 +265,10 @@ function handleEditSub(sub: Subscription) {
 
 async function handleSave() {
   if (!form.value.name) { message.error(t('subscriptions.nameRequired')); return }
+  if (form.value.source === 'url' && !form.value.url) {
+    message.error(t('subscriptions.urlRequired'))
+    return
+  }
   saving.value = true
   try {
     if (editingSub.value) {

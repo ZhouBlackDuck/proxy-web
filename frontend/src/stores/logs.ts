@@ -5,66 +5,52 @@ export interface LogEntry {
   time: string
   type: string
   payload: string
+  timestamp: number
 }
-
-const MAX_LOGS = 500
 
 export const useLogStore = defineStore('logs', () => {
   const logs = ref<LogEntry[]>([])
-  const connected = ref(false)
-  const clearedAt = ref<number>(0) // timestamp of last clear
-
-  function addLog(entry: LogEntry) {
-    // Skip logs that were generated before the last clear
-    if (clearedAt.value > 0) {
-      const logTime = parseLogTime(entry.time)
-      if (logTime > 0 && logTime < clearedAt.value) return
-    }
-    logs.value.push(entry)
-    if (logs.value.length > MAX_LOGS) {
-      logs.value = logs.value.slice(-MAX_LOGS)
-    }
-  }
 
   function clearLogs() {
     logs.value = []
-    clearedAt.value = Date.now()
   }
 
-  function parseLogTime(timeStr: string): number {
-    if (!timeStr) return 0
-    // Try HH:MM:SS format - assume today
-    const match = timeStr.match(/(\d{2}):(\d{2}):(\d{2})/)
-    if (match) {
-      const now = new Date()
-      now.setHours(parseInt(match[1]), parseInt(match[2]), parseInt(match[3]), 0)
-      return now.getTime()
+  function getFilteredLogs(levelFilter: string, searchText: string): LogEntry[] {
+    const levelOrder: Record<string, number> = { debug: 0, info: 1, warning: 2, error: 3 }
+    let filtered = logs.value
+
+    // Filter by level: show logs >= selected level
+    if (levelFilter && levelFilter !== 'all') {
+      const minLevel = levelOrder[levelFilter] ?? 0
+      filtered = filtered.filter(log => (levelOrder[log.type] ?? 1) >= minLevel)
     }
-    return 0
+
+    // Filter by search text
+    if (searchText) {
+      const search = searchText.toLowerCase()
+      filtered = filtered.filter(log =>
+        log.payload.toLowerCase().includes(search) ||
+        log.type.toLowerCase().includes(search)
+      )
+    }
+
+    return filtered
   }
 
-  // Load historical logs from file
-  async function loadHistory(token: string) {
-    // Skip if logs were cleared
-    if (clearedAt.value > 0) return
+  // Fetch logs from server
+  async function fetchLogs(token: string) {
     try {
-      const resp = await fetch('/api/logs?limit=200', {
+      const resp = await fetch('/api/logs', {
         headers: { Authorization: `Bearer ${token}` },
       })
       const data = await resp.json()
-      if (data.logs && data.logs.length > 0) {
-        if (logs.value.length < data.logs.length) {
-          logs.value = data.logs.map((l: any) => ({
-            time: l.time || '',
-            type: l.type || 'info',
-            payload: l.payload || '',
-          }))
-        }
+      if (data.logs) {
+        logs.value = data.logs
       }
     } catch {
       // ignore
     }
   }
 
-  return { logs, connected, addLog, clearLogs, loadHistory }
+  return { logs, clearLogs, getFilteredLogs, fetchLogs }
 })

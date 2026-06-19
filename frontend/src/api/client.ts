@@ -22,7 +22,8 @@ client.interceptors.request.use((config) => {
 client.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    // Don't redirect for password change endpoint
+    if (error.response?.status === 401 && !error.config?.url?.includes('/auth/password')) {
       localStorage.removeItem('token')
       router.push('/login')
     }

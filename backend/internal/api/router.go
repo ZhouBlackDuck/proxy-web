@@ -41,7 +41,7 @@ func NewRouter(cfg *config.Config, store *store.FileStore, pm *process.Manager) 
 	kernelH := handler.NewKernelHandler(cfg)
 	subH := handler.NewSubscriptionHandler(cfg)
 	testH := handler.NewTestHandler(cfg.Mihomo.APIAddr, cfg.Mihomo.Secret)
-	logH := handler.NewLogHandler(pm)
+	logH := handler.NewLogHandler(cfg)
 	wsRelay := ws.NewRelay(cfg.Mihomo.APIAddr, cfg.Mihomo.Secret)
 
 	// Public routes (no auth required)

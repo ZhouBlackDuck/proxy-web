@@ -265,7 +265,7 @@ async function startProcess(name: string) {
   processLoading.value = `${name}:start`
   try {
     await client.post(`/process/${name}/start`)
-    message.success(`${name} started`)
+    message.success(t('settings.started'))
     await fetchProcesses()
   } catch (err: any) {
     message.error(err.response?.data?.error || t('common.failed'))
@@ -278,7 +278,7 @@ async function stopProcess(name: string) {
   processLoading.value = `${name}:stop`
   try {
     await client.post(`/process/${name}/stop`)
-    message.success(`${name} stopped`)
+    message.success(t('settings.stopped'))
     await fetchProcesses()
   } catch (err: any) {
     message.error(err.response?.data?.error || t('common.failed'))
@@ -291,7 +291,7 @@ async function restartProcess(name: string) {
   processLoading.value = `${name}:restart`
   try {
     await client.post(`/process/${name}/restart`)
-    message.success(`${name} restarting...`)
+    message.success(t('settings.restarting'))
     setTimeout(() => fetchProcesses(), 5000)
   } catch (err: any) {
     message.error(err.response?.data?.error || t('common.failed'))
