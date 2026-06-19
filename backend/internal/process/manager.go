@@ -48,11 +48,6 @@ func NewManager(cfg *config.Config) *Manager {
 	}
 }
 
-// LogFilePath returns the path to the mihomo log file
-func (m *Manager) LogFilePath() string {
-	return filepath.Join(m.cfg.DataDir, "mihomo", "mihomo.log")
-}
-
 // StartMihomo starts the mihomo process
 func (m *Manager) StartMihomo() error {
 	m.mihomo.mu.Lock()
@@ -74,7 +69,7 @@ func (m *Manager) StartMihomo() error {
 	cmd := exec.Command(binaryPath, args...)
 
 	// Redirect stdout/stderr to log file (append mode)
-	logPath := m.LogFilePath()
+	logPath := filepath.Join(m.cfg.DataDir, "mihomo", "mihomo.log")
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return fmt.Errorf("open log file: %w", err)
@@ -386,52 +381,4 @@ func hostFromAddr(addr string) string {
 		}
 	}
 	return addr
-}
-
-// ReadLogs reads the last N lines from the mihomo log file
-func (m *Manager) ReadLogs(maxLines int) ([]string, error) {
-	logPath := m.LogFilePath()
-	data, err := os.ReadFile(logPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return []string{}, nil
-		}
-		return nil, err
-	}
-
-	lines := splitLines(string(data))
-	if len(lines) > maxLines {
-		lines = lines[len(lines)-maxLines:]
-	}
-	return lines, nil
-}
-
-// ClearLogs truncates the mihomo log file
-func (m *Manager) ClearLogs() error {
-	logPath := m.LogFilePath()
-	return os.WriteFile(logPath, []byte{}, 0644)
-}
-
-func splitLines(s string) []string {
-	var lines []string
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
-			line := s[start:i]
-			if len(line) > 0 && line[len(line)-1] == '\r' {
-				line = line[:len(line)-1]
-			}
-			if line != "" {
-				lines = append(lines, line)
-			}
-			start = i + 1
-		}
-	}
-	if start < len(s) {
-		line := s[start:]
-		if line != "" {
-			lines = append(lines, line)
-		}
-	}
-	return lines
 }

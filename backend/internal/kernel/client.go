@@ -237,16 +237,6 @@ func (c *Client) SwitchProxy(groupName, nodeName string) error {
 	return c.doJSON("PUT", "/proxies/"+groupName, map[string]string{"name": nodeName}, nil)
 }
 
-// TestDelay tests a single proxy's delay
-func (c *Client) TestDelay(name, url string, timeout int) (map[string]int, error) {
-	path := fmt.Sprintf("/proxies/%s/delay?url=%s&timeout=%d", name, url, timeout)
-	var result map[string]int
-	if err := c.doJSON("GET", path, nil, &result); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
 // GetGroups returns all proxy groups
 func (c *Client) GetGroups() (*ProxiesResponse, error) {
 	// mihomo /group returns proxies as an array, not a map
@@ -264,16 +254,6 @@ func (c *Client) GetGroups() (*ProxiesResponse, error) {
 	return &ProxiesResponse{Proxies: proxies}, nil
 }
 
-// TestGroupDelay tests all nodes in a group
-func (c *Client) TestGroupDelay(name, url string, timeout int) (map[string]int, error) {
-	path := fmt.Sprintf("/group/%s/delay?url=%s&timeout=%d", name, url, timeout)
-	var result map[string]int
-	if err := c.doJSON("GET", path, nil, &result); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
 // GetRules returns all rules
 func (c *Client) GetRules() (*RulesResponse, error) {
 	var resp RulesResponse
@@ -281,11 +261,6 @@ func (c *Client) GetRules() (*RulesResponse, error) {
 		return nil, err
 	}
 	return &resp, nil
-}
-
-// DisableRules enables/disables rules by index
-func (c *Client) DisableRules(rules map[int]bool) error {
-	return c.doJSON("PATCH", "/rules/disable", rules, nil)
 }
 
 // GetConnections returns active connections
@@ -310,40 +285,4 @@ func (c *Client) CloseConnection(id string) error {
 // Restart restarts the mihomo kernel
 func (c *Client) Restart() error {
 	return c.doJSON("POST", "/restart", nil, nil)
-}
-
-// IsAlive checks if mihomo is reachable
-func (c *Client) IsAlive() bool {
-	resp, err := c.doRequest("GET", "/", nil)
-	if err != nil {
-		return false
-	}
-	resp.Body.Close()
-	return resp.StatusCode < 500
-}
-
-// --- Raw proxy for handler forwarding ---
-
-// ProxyRequest forwards an HTTP request to mihomo and returns the response
-func (c *Client) ProxyRequest(r *http.Request) (*http.Response, error) {
-	url := fmt.Sprintf("http://%s%s", c.baseURL, r.URL.Path)
-	if r.URL.RawQuery != "" {
-		url += "?" + r.URL.RawQuery
-	}
-
-	req, err := http.NewRequest(r.Method, url, r.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	// Copy headers
-	for k, v := range r.Header {
-		req.Header[k] = v
-	}
-
-	if c.secret != "" {
-		req.Header.Set("Authorization", "Bearer "+c.secret)
-	}
-
-	return c.http.Do(req)
 }

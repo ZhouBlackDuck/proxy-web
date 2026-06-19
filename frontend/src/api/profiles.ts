@@ -41,34 +41,6 @@ export const profileApi = {
     await client.delete(`/profiles/${id}`)
   },
 
-  async activate(id: string): Promise<void> {
-    await client.post(`/profiles/${id}/activate`)
-  },
-
-  async preview(id: string): Promise<string> {
-    const { data } = await client.get(`/profiles/${id}/preview`)
-    return data
-  },
-
-  async export(id: string): Promise<Blob> {
-    const { data } = await client.post(`/profiles/${id}/export`, null, {
-      responseType: 'blob',
-    })
-    return data
-  },
-
-  async import(file: File, importSubscriptions?: boolean): Promise<any> {
-    const formData = new FormData()
-    formData.append('file', file)
-    if (importSubscriptions !== undefined) {
-      formData.append('importSubscriptions', String(importSubscriptions))
-    }
-    const { data } = await client.post('/profiles/import', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
-    return data
-  },
-
   async validateConfig(content: string): Promise<{ valid: boolean; errors: string[] }> {
     const { data } = await client.post('/config/validate', { content })
     return data
@@ -81,23 +53,5 @@ export const profileApi = {
 
   async updatePorts(ports: any): Promise<void> {
     await client.put('/config/ports', ports)
-  },
-
-  async getRules(id: string): Promise<string> {
-    const { data } = await client.get(`/profiles/${id}/rules`)
-    return data
-  },
-
-  async updateRules(id: string, content: string): Promise<void> {
-    await client.put(`/profiles/${id}/rules`, { content })
-  },
-
-  async getOverride(id: string): Promise<string> {
-    const { data } = await client.get(`/profiles/${id}/override`)
-    return data
-  },
-
-  async updateOverride(id: string, content: string): Promise<void> {
-    await client.put(`/profiles/${id}/override`, { content })
   },
 }

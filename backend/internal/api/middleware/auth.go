@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 
@@ -57,15 +56,4 @@ func AuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
-}
-
-// GenerateToken creates a new JWT token
-func GenerateToken() (string, error) {
-	claims := jwt.MapClaims{
-		"sub": "user",
-		"iat": jwt.NewNumericDate(time.Now()),
-		"exp": jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(jwtSecret)
 }

@@ -5,7 +5,6 @@ export interface LogEntry {
   time: string
   type: string
   payload: string
-  timestamp: number
 }
 
 export const useLogStore = defineStore('logs', () => {

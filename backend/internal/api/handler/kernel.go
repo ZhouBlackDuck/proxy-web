@@ -28,11 +28,6 @@ func NewKernelHandler(cfg *config.Config) *KernelHandler {
 	}
 }
 
-// Client returns the kernel client for use by other handlers
-func (h *KernelHandler) Client() *kernel.Client {
-	return h.client
-}
-
 // Proxy forwards requests to mihomo API
 func (h *KernelHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 	// Strip /api/kernel prefix and forward to mihomo
@@ -143,60 +138,6 @@ func (h *KernelHandler) GetProxies(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, proxies)
 }
 
-// GetProxy returns a specific proxy
-func (h *KernelHandler) GetProxy(w http.ResponseWriter, r *http.Request) {
-	name := extractPathParam(r.URL.Path, "/api/kernel/proxies/")
-	p, err := h.client.GetProxy(name)
-	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
-		return
-	}
-	writeJSON(w, http.StatusOK, p)
-}
-
-// SwitchProxy switches the selected node in a Selector group
-func (h *KernelHandler) SwitchProxy(w http.ResponseWriter, r *http.Request) {
-	name := extractPathParam(r.URL.Path, "/api/kernel/proxies/")
-	var body struct {
-		NodeName string `json:"name"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
-		return
-	}
-	if err := h.client.SwitchProxy(name, body.NodeName); err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"message": "ok"})
-}
-
-// TestDelay tests a proxy's delay
-func (h *KernelHandler) TestDelay(w http.ResponseWriter, r *http.Request) {
-	name := extractPathParam(r.URL.Path, "/api/kernel/proxies/")
-	testURL := r.URL.Query().Get("url")
-	if testURL == "" {
-		testURL = "https://www.gstatic.com/generate_204"
-	}
-	timeout := r.URL.Query().Get("timeout")
-	if timeout == "" {
-		timeout = "5000"
-	}
-
-	path := fmt.Sprintf("/proxies/%s/delay?url=%s&timeout=%s",
-		url.PathEscape(name), url.QueryEscape(testURL), timeout)
-	resp, err := h.client.ProxyRequest(mustNewRequest("GET", path))
-	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
-		return
-	}
-	defer resp.Body.Close()
-	data, _ := io.ReadAll(resp.Body)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(resp.StatusCode)
-	w.Write(data)
-}
-
 // GetGroups returns all proxy groups
 func (h *KernelHandler) GetGroups(w http.ResponseWriter, r *http.Request) {
 	groups, err := h.client.GetGroups()
@@ -230,16 +171,6 @@ func (h *KernelHandler) GetConnections(w http.ResponseWriter, r *http.Request) {
 // CloseAllConnections closes all connections
 func (h *KernelHandler) CloseAllConnections(w http.ResponseWriter, r *http.Request) {
 	if err := h.client.CloseAllConnections(); err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"message": "ok"})
-}
-
-// CloseConnection closes a specific connection
-func (h *KernelHandler) CloseConnection(w http.ResponseWriter, r *http.Request) {
-	id := extractPathParam(r.URL.Path, "/api/kernel/connections/")
-	if err := h.client.CloseConnection(id); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
@@ -308,9 +239,4 @@ func extractPathParam(path, prefix string) string {
 	}
 	decoded, _ := url.PathUnescape(name)
 	return decoded
-}
-
-func mustNewRequest(method, path string) *http.Request {
-	req, _ := http.NewRequest(method, "http://dummy"+path, nil)
-	return req
 }

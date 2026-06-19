@@ -14,12 +14,6 @@ func NewPipeline() *Pipeline {
 	return &Pipeline{}
 }
 
-// Build takes a subscription yaml, override yaml, and global rules,
-// and produces the final merged config
-func (p *Pipeline) Build(subYaml, overrideYaml, globalRules string) ([]byte, error) {
-	return p.BuildWithPorts(subYaml, overrideYaml, globalRules, nil)
-}
-
 // BuildWithPorts builds config with port settings applied
 func (p *Pipeline) BuildWithPorts(subYaml, overrideYaml, globalRules string, ports map[string]PortSetting) ([]byte, error) {
 	// 1. Parse subscription config
@@ -268,19 +262,6 @@ func hasKey(m *yaml.Node, key string) bool {
 		}
 	}
 	return false
-}
-
-// GetKeyValue gets a value from a mapping node by key
-func GetKeyValue(m *yaml.Node, key string) *yaml.Node {
-	if m == nil {
-		return nil
-	}
-	for i := 0; i < len(m.Content); i += 2 {
-		if m.Content[i].Value == key {
-			return m.Content[i+1]
-		}
-	}
-	return nil
 }
 
 // PortSetting defines a port's enabled state and value

@@ -42,13 +42,6 @@ type ProcessItem struct {
 	Args  map[string]interface{} `json:"args,omitempty"`
 }
 
-type Collection struct {
-	Name        string   `json:"name"`
-	DisplayName string   `json:"displayName,omitempty"`
-	Subscriptions []string `json:"subscriptions"`
-	Process     []ProcessItem `json:"process,omitempty"`
-}
-
 // --- API Methods ---
 
 func (c *Client) doRequest(method, path string, body interface{}) (*http.Response, error) {
@@ -181,55 +174,4 @@ func (c *Client) GetFlowInfo(name string) (map[string]interface{}, error) {
 		return nil, err
 	}
 	return resp, nil
-}
-
-// --- Collections ---
-
-// ListCollections returns all collections
-func (c *Client) ListCollections() ([]Collection, error) {
-	var resp struct {
-		Data []Collection `json:"data"`
-	}
-	if err := c.doJSON("GET", "/api/collections", nil, &resp); err != nil {
-		return nil, err
-	}
-	return resp.Data, nil
-}
-
-// CreateCollection creates a new collection (multi-sub merge)
-func (c *Client) CreateCollection(col Collection) error {
-	return c.doJSON("POST", "/api/collections", col, nil)
-}
-
-// DeleteCollection deletes a collection
-func (c *Client) DeleteCollection(name string) error {
-	return c.doJSON("DELETE", "/api/collection/"+name, nil, nil)
-}
-
-// DownloadCollection gets the converted collection config
-func (c *Client) DownloadCollection(name, target string) (string, error) {
-	url := fmt.Sprintf("http://%s/download/collection/%s?target=%s", c.baseURL, name, target)
-	resp, err := c.http.Get(url)
-	if err != nil {
-		return "", fmt.Errorf("download collection: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		data, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("download failed: %d %s", resp.StatusCode, string(data))
-	}
-
-	data, err := io.ReadAll(resp.Body)
-	return string(data), err
-}
-
-// IsAlive checks if Sub-Store is reachable
-func (c *Client) IsAlive() bool {
-	resp, err := c.doRequest("GET", "/api/subs", nil)
-	if err != nil {
-		return false
-	}
-	resp.Body.Close()
-	return resp.StatusCode < 500
 }
