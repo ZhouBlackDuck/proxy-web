@@ -26,15 +26,6 @@ jobs:
             echo "tag=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Create source archives
-        run: |
-          TAG="${{ steps.version.outputs.tag }}"
-          git archive --format=tar.gz --prefix=proxy-web-${TAG}/ -o proxy-web-${TAG}-src.tar.gz HEAD
-          git archive --format=zip    --prefix=proxy-web-${TAG}/ -o proxy-web-${TAG}-src.zip    HEAD
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -42,6 +33,4 @@ jobs:
           name: ${{ steps.version.outputs.tag }}
           body: |
             Source release ${{ steps.version.outputs.tag }}
-          files: |
-            proxy-web-${{ steps.version.outputs.tag }}-src.tar.gz
-            proxy-web-${{ steps.version.outputs.tag }}-src.zip
+            > GitHub automatically attaches **Source code (zip)** and **Source code (tar.gz)** below.
