@@ -97,7 +97,7 @@ func (h *IconHandler) GetIcon(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "image/svg+xml")
-	w.Header().Set("Cache-Control", "public, max-age=31536000")
+	w.Header().Set("Cache-Control", "no-store")
 	w.Write(content)
 }
 
