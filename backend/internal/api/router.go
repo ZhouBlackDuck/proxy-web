@@ -43,7 +43,7 @@ func NewRouter(cfg *config.Config, store *store.FileStore, pm *process.Manager) 
 	// Handler instances
 	authH := handler.NewAuthHandler(cfg, store)
 	healthH := handler.NewHealthHandler(pm)
-	configH := handler.NewConfigHandler(cfg, store, subStore, converter)
+	configH := handler.NewConfigHandler(cfg, store, subStore, converter, pm)
 	iconH := handler.NewIconHandler(cfg)
 	kernelH := handler.NewKernelHandler(cfg)
 	subH := handler.NewSubscriptionHandler(subStore, converter, cfg.DataDir)

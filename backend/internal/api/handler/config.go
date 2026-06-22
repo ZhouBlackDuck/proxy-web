@@ -17,6 +17,7 @@ import (
 	"github.com/zwforum/proxy-web/internal/enhance"
 	"github.com/zwforum/proxy-web/internal/export"
 	"github.com/zwforum/proxy-web/internal/kernel"
+	"github.com/zwforum/proxy-web/internal/process"
 	"github.com/zwforum/proxy-web/internal/store"
 	"github.com/zwforum/proxy-web/internal/subconverter"
 	"github.com/zwforum/proxy-web/internal/subscription"
@@ -31,10 +32,11 @@ type ConfigHandler struct {
 	exporter   *export.Exporter
 	kernel     *kernel.Client
 	converter  *subconverter.Client
+	pm         *process.Manager
 	tmpDir     string
 }
 
-func NewConfigHandler(cfg *config.Config, s *store.FileStore, subStore *subscription.Store, converter *subconverter.Client) *ConfigHandler {
+func NewConfigHandler(cfg *config.Config, s *store.FileStore, subStore *subscription.Store, converter *subconverter.Client, pm *process.Manager) *ConfigHandler {
 	tmpDir := filepath.Join(cfg.DataDir, "webui", "tmp")
 	os.MkdirAll(tmpDir, 0755)
 	return &ConfigHandler{
@@ -45,6 +47,7 @@ func NewConfigHandler(cfg *config.Config, s *store.FileStore, subStore *subscrip
 		exporter:  export.NewExporter(s, subStore, cfg),
 		kernel:    kernel.NewClient(cfg.Mihomo.APIAddr, cfg.Mihomo.Secret),
 		converter: converter,
+		pm:        pm,
 		tmpDir:    tmpDir,
 	}
 }
@@ -368,7 +371,6 @@ func (h *ConfigHandler) UpdatePorts(w http.ResponseWriter, r *http.Request) {
 		finalYaml, err := h.buildConfig(h.cfg.ActiveSubscription)
 		if err == nil {
 			h.store.WriteMihomoConfig(finalYaml)
-			h.kernel.PutConfig(h.cfg.Mihomo.ConfigPath)
 		}
 	} else {
 		// No active subscription: read current config from disk, update ports, reload
@@ -377,7 +379,6 @@ func (h *ConfigHandler) UpdatePorts(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			var node yaml.Node
 			if yaml.Unmarshal(data, &node) == nil {
-				// Get mapping node
 				var m *yaml.Node
 				if node.Kind == yaml.DocumentNode && len(node.Content) > 0 && node.Content[0].Kind == yaml.MappingNode {
 					m = node.Content[0]
@@ -392,7 +393,6 @@ func (h *ConfigHandler) UpdatePorts(w http.ResponseWriter, r *http.Request) {
 					}
 					for key, entry := range portMap {
 						if entry.Enabled {
-							// Find and update the key in the mapping
 							for i := 0; i < len(m.Content); i += 2 {
 								if m.Content[i].Value == key {
 									m.Content[i+1] = &yaml.Node{
@@ -408,10 +408,22 @@ func (h *ConfigHandler) UpdatePorts(w http.ResponseWriter, r *http.Request) {
 					out, err := yaml.Marshal(&node)
 					if err == nil {
 						os.WriteFile(configPath, out, 0644)
-						h.kernel.PutConfig(configPath)
 					}
 				}
 			}
+		}
+	}
+
+	// Port changes require a full kernel restart (ports are bound at startup)
+	if h.pm != nil {
+		h.pm.StopMihomo()
+		time.Sleep(500 * time.Millisecond)
+		if err := h.pm.StartMihomo(); err != nil {
+			writeJSON(w, http.StatusOK, map[string]string{
+				"message": "ports updated",
+				"warning": "mihomo restart failed: " + err.Error(),
+			})
+			return
 		}
 	}
 

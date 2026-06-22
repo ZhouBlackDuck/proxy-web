@@ -246,7 +246,7 @@ const editingIndex = ref(-1)
 // Icon picker
 const showIconPicker = ref(false)
 const presetEmojis = ['🔍', '🐙', '🌐', '📺', '🎵', '🎬', '🎮', '📱', '💻', '☁️', '🔒', '📡', '⚡', '🚀', '🌍', '🇺🇸', '🇯🇵', '🇬🇧', '🇩🇪', '🇫🇷', '🇰🇷', '🇨🇳', '🇭🇰', '🇸🇬']
-const uploadedSvgs = ref<string[]>(JSON.parse(localStorage.getItem('uploadedSvgs') || '[]'))
+const uploadedSvgs = ref<string[]>([])
 
 // Result map keyed by site name
 const resultMap = ref<Record<string, TestResult>>({})
@@ -320,27 +320,18 @@ useWebSocket({
   },
 })
 
-// Validate icon references against server — clean up stale URLs
-// that exist in localStorage/imported data but were deleted on the server.
-async function validateIcons() {
+// Fetch uploaded icons list from server
+async function fetchUploadedIcons() {
   try {
     const token = localStorage.getItem('token') || ''
     const resp = await fetch('/api/icons', { headers: { Authorization: `Bearer ${token}` } })
     const data = await resp.json()
-    const validUrls = new Set<string>((data.icons || []).map((i: { url: string }) => i.url))
+    uploadedSvgs.value = (data.icons || []).map((i: { url: string }) => i.url)
 
+    // Clean up site icons referencing deleted icons
     let changed = false
-
-    // Clean up uploadedSvgs
-    const validSvgs = uploadedSvgs.value.filter(url => !url.startsWith('/api/icons/') || validUrls.has(url))
-    if (validSvgs.length !== uploadedSvgs.value.length) {
-      uploadedSvgs.value = validSvgs
-      localStorage.setItem('uploadedSvgs', JSON.stringify(validSvgs))
-    }
-
-    // Reset site icons referencing deleted icons
     for (const site of testSites.value) {
-      if (site.icon && site.icon.startsWith('/api/icons/') && !validUrls.has(site.icon)) {
+      if (site.icon && site.icon.startsWith('/api/icons/') && !uploadedSvgs.value.includes(site.icon)) {
         site.icon = ''
         changed = true
       }
@@ -353,7 +344,7 @@ async function validateIcons() {
 
 onMounted(async () => {
   await kernelStore.initialize()
-  validateIcons()
+  await fetchUploadedIcons()
   nextTick(() => drawGraph())
 })
 
@@ -560,11 +551,9 @@ async function handleSvgUpload({ file }: any) {
     const data = await resp.json()
     const iconUrl = data.url
 
-    // Store the URL reference in localStorage
+    // Add to the uploaded list and sync to card immediately
     uploadedSvgs.value.push(iconUrl)
-    localStorage.setItem('uploadedSvgs', JSON.stringify(uploadedSvgs.value))
 
-    // Select it and sync to card immediately
     if (editingSite.value) {
       editingSite.value.icon = iconUrl
       const idx = editingIndex.value
@@ -640,9 +629,8 @@ async function removeSvg(index: number) {
   }
   saveSites()
 
-  // Remove from localStorage
+  // Remove from local list
   uploadedSvgs.value.splice(index, 1)
-  localStorage.setItem('uploadedSvgs', JSON.stringify(uploadedSvgs.value))
 }
 
 function cancelEditSite() {
