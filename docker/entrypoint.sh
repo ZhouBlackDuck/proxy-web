@@ -6,7 +6,6 @@ echo "=== Proxy WebUI Starting ==="
 # Initialize data directories
 mkdir -p /data/webui/profiles
 mkdir -p /data/mihomo/bin
-mkdir -p /data/sub-store
 
 # Copy mihomo binary and GeoIP data to data volume if not present
 if [ ! -f /data/mihomo/bin/mihomo ]; then
@@ -21,6 +20,15 @@ for f in geoip.metadb geosite.dat geoip.dat; do
     fi
 done
 
+# subconverter is already installed in the base image at /usr/bin/subconverter
+# Create pref.ini from example if not present (subconverter requires it)
+if [ ! -f /base/pref.ini ]; then
+    cp /base/pref.example.ini /base/pref.ini
+    # Fix template_path to point to base templates
+    sed -i 's|^template_path=$|template_path=base|' /base/pref.ini
+    echo "Created subconverter pref.ini"
+fi
+
 # Generate initial settings.json if not exists
 if [ ! -f /data/webui/settings.json ]; then
     cat > /data/webui/settings.json << 'EOF'
@@ -33,9 +41,9 @@ if [ ! -f /data/webui/settings.json ]; then
     "binaryPath": "/data/mihomo/bin/mihomo",
     "configPath": "/data/mihomo/config.yaml"
   },
-  "substore": {
-    "apiAddr": "127.0.0.1:3001",
-    "dataDir": "/data/sub-store"
+  "subconverter": {
+    "apiAddr": "127.0.0.1:25500",
+    "binaryPath": "/usr/bin/subconverter"
   }
 }
 EOF

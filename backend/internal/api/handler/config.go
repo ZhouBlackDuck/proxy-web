@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -16,27 +19,34 @@ import (
 	"github.com/zwforum/proxy-web/internal/export"
 	"github.com/zwforum/proxy-web/internal/kernel"
 	"github.com/zwforum/proxy-web/internal/store"
-	"github.com/zwforum/proxy-web/internal/substore"
+	"github.com/zwforum/proxy-web/internal/subconverter"
+	"github.com/zwforum/proxy-web/internal/subscription"
 )
 
 // ConfigHandler handles subscription activation, preview, rules/override, export/import
 type ConfigHandler struct {
-	cfg      *config.Config
-	store    *store.FileStore
-	pipeline *enhance.Pipeline
-	exporter *export.Exporter
-	kernel   *kernel.Client
-	subStore *substore.Client
+	cfg        *config.Config
+	store      *store.FileStore
+	subStore   *subscription.Store
+	pipeline   *enhance.Pipeline
+	exporter   *export.Exporter
+	kernel     *kernel.Client
+	converter  *subconverter.Client
+	tmpDir     string
 }
 
-func NewConfigHandler(cfg *config.Config, s *store.FileStore) *ConfigHandler {
+func NewConfigHandler(cfg *config.Config, s *store.FileStore, subStore *subscription.Store, converter *subconverter.Client) *ConfigHandler {
+	tmpDir := filepath.Join(cfg.DataDir, "webui", "tmp")
+	os.MkdirAll(tmpDir, 0755)
 	return &ConfigHandler{
-		cfg:      cfg,
-		store:    s,
-		pipeline: enhance.NewPipeline(),
-		exporter: export.NewExporter(s, cfg.SubStore.APIAddr, cfg),
-		kernel:   kernel.NewClient(cfg.Mihomo.APIAddr, cfg.Mihomo.Secret),
-		subStore: substore.NewClient(cfg.SubStore.APIAddr),
+		cfg:       cfg,
+		store:     s,
+		subStore:  subStore,
+		pipeline:  enhance.NewPipeline(),
+		exporter:  export.NewExporter(s, subStore, cfg),
+		kernel:    kernel.NewClient(cfg.Mihomo.APIAddr, cfg.Mihomo.Secret),
+		converter: converter,
+		tmpDir:    tmpDir,
 	}
 }
 
@@ -243,18 +253,31 @@ func (h *ConfigHandler) GetActiveSubscription(w http.ResponseWriter, r *http.Req
 // buildConfig runs the full config merge pipeline for a subscription
 // Pipeline order: subscription → rules(prepend) → override(merge) → defaults → ports
 func (h *ConfigHandler) buildConfig(subscriptionName string) ([]byte, error) {
-	// 1. Get subscription yaml from Sub-Store
+	// 1. Get subscription yaml via subconverter
 	var subYaml string
 	if subscriptionName != "" && subscriptionName != "__empty__" {
-		downloaded, err := h.subStore.GetRawContent(subscriptionName)
-		if err != nil {
-			// If subscription not found, use minimal empty config
+		sub, err := h.subStore.Get(subscriptionName)
+		if err != nil || sub == nil {
 			subYaml = "proxies: []\nproxy-groups: []\nrules: []"
-		} else {
-			subYaml = downloaded
-		}
+			} else {
+				input := h.resolveSubInput(sub)
+				raw, fetchErr := h.converter.FetchRaw(input)
+				if fetchErr == nil && subconverter.IsClashFormat(raw) {
+					// Clash format: use raw content directly to preserve proxy-groups/rules
+					subYaml = raw
+				} else if fetchErr == nil {
+					// Non-Clash format: use subconverter to convert (proxy-groups will be empty)
+					converted, err := h.converter.Convert(input)
+					if err != nil {
+						subYaml = "proxies: []\nproxy-groups: []\nrules: []"
+					} else {
+						subYaml = fixNullProxyGroups(converted)
+					}
+				} else {
+					subYaml = "proxies: []\nproxy-groups: []\nrules: []"
+				}
+			}
 	} else {
-		// Empty subscription - use minimal empty config
 		subYaml = "proxies: []\nproxy-groups: []\nrules: []"
 	}
 
@@ -292,6 +315,25 @@ func (h *ConfigHandler) buildConfig(subscriptionName string) ([]byte, error) {
 	}
 
 	return finalYaml, nil
+}
+
+// resolveSubInput returns the subconverter input: URL for remote, temp file path for local
+func (h *ConfigHandler) resolveSubInput(sub *subscription.Subscription) string {
+	if sub.Source == "url" && sub.URL != "" {
+		return sub.URL
+	}
+	tmpFile := filepath.Join(h.tmpDir, sub.Name+".yaml")
+	os.WriteFile(tmpFile, []byte(sub.Content), 0644)
+	return tmpFile
+}
+
+// fixNullProxyGroups replaces "proxy-groups: ~" with "proxy-groups: []" in subconverter output
+func fixNullProxyGroups(yaml string) string {
+	yaml = strings.ReplaceAll(yaml, "proxy-groups: ~", "proxy-groups: []")
+	yaml = strings.ReplaceAll(yaml, "Proxy Group: ~", "proxy-groups: []")
+	yaml = strings.ReplaceAll(yaml, "rules: ~", "rules: []")
+	yaml = strings.ReplaceAll(yaml, "Rule: ~", "rules: []")
+	return yaml
 }
 
 // ValidateConfig validates a yaml config

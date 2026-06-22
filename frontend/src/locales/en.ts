@@ -160,6 +160,7 @@ export default {
     rulesSaved: 'Saved',
     overrideSaved: 'Saved',
     activate: 'Activate',
+    mergedPreview: 'Merged Config Preview',
 },
   profiles: {
     title: 'Profiles',
@@ -271,7 +272,7 @@ export default {
     geoUpdating: 'Updating...',
     processManagement: 'Process Management',
     mihomo: 'Mihomo Kernel',
-    substore: 'Sub-Store Service',
+    subconverter: 'SubConverter',
     start: 'Start',
     stop: 'Stop',
     restart: 'Restart',

@@ -13,38 +13,38 @@ import (
 	"github.com/zwforum/proxy-web/internal/config"
 )
 
-// Manager manages child processes (mihomo and Sub-Store)
+// Manager manages child processes (mihomo and subconverter)
 type Manager struct {
-	cfg      *config.Config
-	mihomo   *processInfo
-	substore *processInfo
-	mu       sync.RWMutex
+	cfg         *config.Config
+	mihomo      *processInfo
+	subconverter *processInfo
+	mu          sync.RWMutex
 }
 
 type processInfo struct {
-	cmd     *exec.Cmd
-	running bool
-	pid     int
-	started time.Time
+	cmd      *exec.Cmd
+	running  bool
+	pid      int
+	started  time.Time
 	restarts int
-	stopCh  chan struct{} // signals that stop was intentional
-	mu      sync.Mutex
+	stopCh   chan struct{} // signals that stop was intentional
+	mu       sync.Mutex
 }
 
 // ProcessStatus is the public status of a managed process
 type ProcessStatus struct {
-	Name    string  `json:"name"`
-	Running bool    `json:"running"`
-	PID     int     `json:"pid"`
-	Uptime  int64   `json:"uptime"` // seconds
+	Name     string `json:"name"`
+	Running  bool   `json:"running"`
+	PID      int    `json:"pid"`
+	Uptime   int64  `json:"uptime"` // seconds
 	Restarts int    `json:"restarts"`
 }
 
 func NewManager(cfg *config.Config) *Manager {
 	return &Manager{
-		cfg:      cfg,
-		mihomo:   &processInfo{stopCh: make(chan struct{}, 1)},
-		substore: &processInfo{stopCh: make(chan struct{}, 1)},
+		cfg:         cfg,
+		mihomo:      &processInfo{stopCh: make(chan struct{}, 1)},
+		subconverter: &processInfo{stopCh: make(chan struct{}, 1)},
 	}
 }
 
@@ -113,19 +113,16 @@ func (m *Manager) StopMihomo() error {
 		return nil
 	}
 
-	// Mark as intentional stop (prevents auto-restart)
 	select {
 	case m.mihomo.stopCh <- struct{}{}:
 	default:
 	}
 	m.mihomo.running = false
 
-	// Send SIGTERM
 	if m.mihomo.cmd.Process != nil {
 		m.mihomo.cmd.Process.Signal(syscall.SIGTERM)
 	}
 
-	// Wait for process to exit (monitored by goroutine)
 	deadline := time.After(10 * time.Second)
 	for {
 		select {
@@ -138,97 +135,83 @@ func (m *Manager) StopMihomo() error {
 			return nil
 		default:
 			if m.mihomo.pid == 0 {
-				return nil // monitor already cleaned up
+				return nil
 			}
 			time.Sleep(200 * time.Millisecond)
 		}
 	}
 }
 
-// StartSubStore starts the Sub-Store Node.js service
-func (m *Manager) StartSubStore() error {
-	m.substore.mu.Lock()
-	defer m.substore.mu.Unlock()
+// StartSubConverter starts the subconverter process
+func (m *Manager) StartSubConverter() error {
+	m.subconverter.mu.Lock()
+	defer m.subconverter.mu.Unlock()
 
-	if m.substore.running {
-		return fmt.Errorf("sub-store already running")
+	if m.subconverter.running {
+		return fmt.Errorf("subconverter already running")
 	}
 
-	// Sub-Store entry point
-	subStoreEntry := "/app/sub-store/sub-store.bundle.js"
-	if _, err := os.Stat(subStoreEntry); os.IsNotExist(err) {
-		subStoreEntry = "/app/sub-store/sub-store.min.js"
-		if _, err := os.Stat(subStoreEntry); os.IsNotExist(err) {
-			subStoreEntry = "/app/sub-store/src/main.js"
-			if _, err := os.Stat(subStoreEntry); os.IsNotExist(err) {
-				return fmt.Errorf("sub-store entry not found")
-			}
-		}
+	binaryPath := m.cfg.SubConverter.BinaryPath
+	if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
+		return fmt.Errorf("subconverter binary not found: %s", binaryPath)
 	}
 
-	cmd := exec.Command("node", subStoreEntry)
-	cmd.Env = append(os.Environ(),
-		fmt.Sprintf("SUB_STORE_BACKEND_API_PORT=%s", portFromAddr(m.cfg.SubStore.APIAddr)),
-		fmt.Sprintf("SUB_STORE_BACKEND_API_HOST=%s", hostFromAddr(m.cfg.SubStore.APIAddr)),
-		fmt.Sprintf("SUB_STORE_DATA_DIR=%s", m.cfg.SubStore.DataDir),
-	)
+	cmd := exec.Command(binaryPath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start sub-store: %w", err)
+		return fmt.Errorf("start subconverter: %w", err)
 	}
 
-	m.substore.cmd = cmd
-	m.substore.running = true
-	m.substore.pid = cmd.Process.Pid
-	m.substore.started = time.Now()
-	m.substore.stopCh = make(chan struct{}, 1)
+	m.subconverter.cmd = cmd
+	m.subconverter.running = true
+	m.subconverter.pid = cmd.Process.Pid
+	m.subconverter.started = time.Now()
+	m.subconverter.stopCh = make(chan struct{}, 1)
 
 	// Wait for health check
-	if err := waitForHTTP(fmt.Sprintf("http://%s/api/subs", m.cfg.SubStore.APIAddr), 30*time.Second); err != nil {
-		fmt.Fprintf(os.Stderr, "sub-store health check failed: %v\n", err)
+	if err := waitForHTTP(fmt.Sprintf("http://%s/version", m.cfg.SubConverter.APIAddr), 30*time.Second); err != nil {
+		fmt.Fprintf(os.Stderr, "subconverter health check failed: %v\n", err)
 	}
 
-	go m.monitorProcess("sub-store", m.substore, nil)
+	go m.monitorProcess("subconverter", m.subconverter, nil)
 
-	fmt.Printf("sub-store started (PID: %d)\n", cmd.Process.Pid)
+	fmt.Printf("subconverter started (PID: %d)\n", cmd.Process.Pid)
 	return nil
 }
 
-// StopSubStore stops the Sub-Store process
-func (m *Manager) StopSubStore() error {
-	m.substore.mu.Lock()
-	defer m.substore.mu.Unlock()
+// StopSubConverter stops the subconverter process
+func (m *Manager) StopSubConverter() error {
+	m.subconverter.mu.Lock()
+	defer m.subconverter.mu.Unlock()
 
-	if !m.substore.running || m.substore.cmd == nil {
+	if !m.subconverter.running || m.subconverter.cmd == nil {
 		return nil
 	}
 
-	// Mark as intentional stop
 	select {
-	case m.substore.stopCh <- struct{}{}:
+	case m.subconverter.stopCh <- struct{}{}:
 	default:
 	}
-	m.substore.running = false
+	m.subconverter.running = false
 
-	if m.substore.cmd.Process != nil {
-		m.substore.cmd.Process.Signal(syscall.SIGTERM)
+	if m.subconverter.cmd.Process != nil {
+		m.subconverter.cmd.Process.Signal(syscall.SIGTERM)
 	}
 
-	// Wait for process to exit
 	deadline := time.After(10 * time.Second)
 	for {
 		select {
 		case <-deadline:
-			if m.substore.cmd.Process != nil {
-				m.substore.cmd.Process.Kill()
+			if m.subconverter.cmd.Process != nil {
+				m.subconverter.cmd.Process.Kill()
 			}
-			fmt.Println("sub-store force killed")
-			m.substore.pid = 0
+			fmt.Println("subconverter force killed")
+			m.subconverter.pid = 0
 			return nil
 		default:
-			if m.substore.pid == 0 {
+			if m.subconverter.pid == 0 {
 				return nil
 			}
 			time.Sleep(200 * time.Millisecond)
@@ -239,7 +222,7 @@ func (m *Manager) StopSubStore() error {
 // StopAll stops all managed processes
 func (m *Manager) StopAll() {
 	m.StopMihomo()
-	m.StopSubStore()
+	m.StopSubConverter()
 }
 
 // Status returns the status of all managed processes
@@ -260,19 +243,19 @@ func (m *Manager) Status() []ProcessStatus {
 	})
 	m.mihomo.mu.Unlock()
 
-	m.substore.mu.Lock()
+	m.subconverter.mu.Lock()
 	uptime = int64(0)
-	if m.substore.running {
-		uptime = int64(time.Since(m.substore.started).Seconds())
+	if m.subconverter.running {
+		uptime = int64(time.Since(m.subconverter.started).Seconds())
 	}
 	statuses = append(statuses, ProcessStatus{
-		Name:     "sub-store",
-		Running:  m.substore.running,
-		PID:      m.substore.pid,
+		Name:     "subconverter",
+		Running:  m.subconverter.running,
+		PID:      m.subconverter.pid,
 		Uptime:   uptime,
-		Restarts: m.substore.restarts,
+		Restarts: m.subconverter.restarts,
 	})
-	m.substore.mu.Unlock()
+	m.subconverter.mu.Unlock()
 
 	return statuses
 }
@@ -284,11 +267,11 @@ func (m *Manager) MihomoAlive() bool {
 	return m.mihomo.running
 }
 
-// SubStoreAlive returns whether Sub-Store is running
-func (m *Manager) SubStoreAlive() bool {
-	m.substore.mu.Lock()
-	defer m.substore.mu.Unlock()
-	return m.substore.running
+// SubConverterAlive returns whether subconverter is running
+func (m *Manager) SubConverterAlive() bool {
+	m.subconverter.mu.Lock()
+	defer m.subconverter.mu.Unlock()
+	return m.subconverter.running
 }
 
 // monitorProcess watches a process and restarts it on unexpected exit
@@ -309,10 +292,8 @@ func (m *Manager) monitorProcess(name string, pi *processInfo, logFile *os.File)
 	pi.pid = 0
 	pi.mu.Unlock()
 
-	// Check if this was an intentional stop
 	select {
 	case <-pi.stopCh:
-		// Intentional stop, don't restart
 		fmt.Printf("%s stopped\n", name)
 		return
 	default:
@@ -321,7 +302,6 @@ func (m *Manager) monitorProcess(name string, pi *processInfo, logFile *os.File)
 	if wasRunning {
 		fmt.Printf("%s exited unexpectedly\n", name)
 
-		// Auto-restart with exponential backoff (max 3 times)
 		if pi.restarts < 3 {
 			pi.restarts++
 			backoff := time.Duration(pi.restarts) * 5 * time.Second
@@ -333,8 +313,8 @@ func (m *Manager) monitorProcess(name string, pi *processInfo, logFile *os.File)
 				if restartErr := m.StartMihomo(); restartErr != nil {
 					fmt.Fprintf(os.Stderr, "failed to restart %s: %v\n", name, restartErr)
 				}
-			case "sub-store":
-				if restartErr := m.StartSubStore(); restartErr != nil {
+			case "subconverter":
+				if restartErr := m.StartSubConverter(); restartErr != nil {
 					fmt.Fprintf(os.Stderr, "failed to restart %s: %v\n", name, restartErr)
 				}
 			}
@@ -361,24 +341,4 @@ func waitForHTTP(url string, timeout time.Duration) error {
 	}
 
 	return fmt.Errorf("timeout waiting for %s", url)
-}
-
-// portFromAddr extracts port from "host:port"
-func portFromAddr(addr string) string {
-	for i := len(addr) - 1; i >= 0; i-- {
-		if addr[i] == ':' {
-			return addr[i+1:]
-		}
-	}
-	return addr
-}
-
-// hostFromAddr extracts host from "host:port"
-func hostFromAddr(addr string) string {
-	for i := len(addr) - 1; i >= 0; i-- {
-		if addr[i] == ':' {
-			return addr[:i]
-		}
-	}
-	return addr
 }

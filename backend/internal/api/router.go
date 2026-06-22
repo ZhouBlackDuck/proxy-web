@@ -13,6 +13,8 @@ import (
 	"github.com/zwforum/proxy-web/internal/config"
 	"github.com/zwforum/proxy-web/internal/process"
 	"github.com/zwforum/proxy-web/internal/store"
+	"github.com/zwforum/proxy-web/internal/subconverter"
+	"github.com/zwforum/proxy-web/internal/subscription"
 )
 
 // NewRouter creates the HTTP router with all routes registered
@@ -32,14 +34,18 @@ func NewRouter(cfg *config.Config, store *store.FileStore, pm *process.Manager) 
 		MaxAge:           300,
 	}))
 
+	// Shared dependencies
+	subStore := subscription.NewStore(cfg.DataDir)
+	converter := subconverter.NewClient(cfg.SubConverter.APIAddr)
+
 	// Handler instances
 	authH := handler.NewAuthHandler(cfg, store)
 	healthH := handler.NewHealthHandler(pm)
 	profileH := handler.NewProfileHandler(store)
-	configH := handler.NewConfigHandler(cfg, store)
+	configH := handler.NewConfigHandler(cfg, store, subStore, converter)
 	iconH := handler.NewIconHandler(cfg)
 	kernelH := handler.NewKernelHandler(cfg)
-	subH := handler.NewSubscriptionHandler(cfg)
+	subH := handler.NewSubscriptionHandler(subStore, converter, cfg.DataDir)
 	testH := handler.NewTestHandler(cfg.Mihomo.APIAddr, cfg.Mihomo.Secret)
 	logH := handler.NewLogHandler(cfg)
 	wsRelay := ws.NewRelay(cfg.Mihomo.APIAddr, cfg.Mihomo.Secret)
@@ -64,9 +70,9 @@ func NewRouter(cfg *config.Config, store *store.FileStore, pm *process.Manager) 
 		r.Post("/api/process/mihomo/start", healthH.StartMihomo)
 		r.Post("/api/process/mihomo/stop", healthH.StopMihomo)
 		r.Post("/api/process/mihomo/restart", healthH.RestartMihomo)
-		r.Post("/api/process/sub-store/start", healthH.StartSubStore)
-		r.Post("/api/process/sub-store/stop", healthH.StopSubStore)
-		r.Post("/api/process/sub-store/restart", healthH.RestartSubStore)
+		r.Post("/api/process/subconverter/start", healthH.StartSubConverter)
+		r.Post("/api/process/subconverter/stop", healthH.StopSubConverter)
+		r.Post("/api/process/subconverter/restart", healthH.RestartSubConverter)
 
 		// Profiles CRUD (kept for backward compatibility)
 		r.Get("/api/profiles", profileH.List)
@@ -83,7 +89,7 @@ func NewRouter(cfg *config.Config, store *store.FileStore, pm *process.Manager) 
 		r.Post("/api/config/export", configH.ExportAll)
 		r.Put("/api/config/export-setting", configH.UpdateExportSetting)
 
-		// Subscriptions (proxied to Sub-Store)
+		// Subscriptions (file-based storage + subconverter conversion)
 		r.Get("/api/subscriptions", subH.List)
 		r.Post("/api/subscriptions", subH.Create)
 		r.Get("/api/subscriptions/{name}", subH.Get)
@@ -91,7 +97,6 @@ func NewRouter(cfg *config.Config, store *store.FileStore, pm *process.Manager) 
 		r.Delete("/api/subscriptions/{name}", subH.Delete)
 		r.Post("/api/subscriptions/{name}/sync", subH.Sync)
 		r.Get("/api/subscriptions/{name}/download", subH.Download)
-		r.Get("/api/subscriptions/{name}/flow", subH.Flow)
 
 		// Subscription config management (rules, override, activate, preview, export)
 		r.Post("/api/subscriptions/{name}/activate", configH.Activate)

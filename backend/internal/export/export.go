@@ -10,7 +10,7 @@ import (
 
 	"github.com/zwforum/proxy-web/internal/config"
 	"github.com/zwforum/proxy-web/internal/store"
-	"github.com/zwforum/proxy-web/internal/substore"
+	"github.com/zwforum/proxy-web/internal/subscription"
 )
 
 // Manifest describes the export package metadata
@@ -31,23 +31,21 @@ type ExportData struct {
 
 // Exporter handles subscription export/import
 type Exporter struct {
-	store    *store.FileStore
-	subStore *substore.Client
-	cfg      *config.Config
+	store   *store.FileStore
+	subStore *subscription.Store
+	cfg     *config.Config
 }
 
-func NewExporter(s *store.FileStore, subStoreAddr string, cfg *config.Config) *Exporter {
+func NewExporter(s *store.FileStore, subStore *subscription.Store, cfg *config.Config) *Exporter {
 	return &Exporter{
 		store:    s,
-		subStore: substore.NewClient(subStoreAddr),
+		subStore: subStore,
 		cfg:      cfg,
 	}
 }
 
-// ExportSubscription creates a zip archive of a subscription (rules + override + optionally sub data)
 // ExportAll exports all platform config + optionally all subscriptions
 func (e *Exporter) ExportAll(testSites []map[string]interface{}) ([]byte, error) {
-	// Read global rules and override
 	globalRules, _ := e.store.ReadSubRules("__global__")
 	globalOverride, _ := e.store.ReadSubOverride("__global__")
 
@@ -65,7 +63,6 @@ func (e *Exporter) ExportAll(testSites []map[string]interface{}) ([]byte, error)
 	manifestData, _ := json.MarshalIndent(manifest, "", "  ")
 	writeZipFile(zw, "manifest.json", manifestData)
 
-	// Write platform config (global rules + override + settings + testSites, excluding mihomo/substore)
 	settingsMap := map[string]interface{}{
 		"theme":                      e.cfg.Theme,
 		"language":                   e.cfg.Language,
@@ -82,12 +79,10 @@ func (e *Exporter) ExportAll(testSites []map[string]interface{}) ([]byte, error)
 	platformDataJSON, _ := json.MarshalIndent(platformData, "", "  ")
 	writeZipFile(zw, "platform/config.json", platformDataJSON)
 
-	// Export all subscriptions if included
 	if includeSubs {
-		subs, err := e.subStore.ListSubscriptions()
+		subs, err := e.subStore.List()
 		if err == nil {
 			manifest.SubscriptionCount = len(subs)
-			// Re-write manifest with count
 			zw.Close()
 			buf.Reset()
 			zw = zip.NewWriter(buf)
@@ -125,10 +120,9 @@ func (e *Exporter) ExportSubscription(subName string) ([]byte, error) {
 		SubscriptionName:     subName,
 	}
 
-	// Fetch subscription data from Sub-Store if needed
-	var subs []substore.Subscription
+	var subs []subscription.Subscription
 	if includeSubs && subName != "" {
-		sub, err := e.subStore.GetSubscription(subName)
+		sub, err := e.subStore.Get(subName)
 		if err == nil && sub != nil {
 			subs = append(subs, *sub)
 			manifest.SubscriptionCount = 1
@@ -138,7 +132,6 @@ func (e *Exporter) ExportSubscription(subName string) ([]byte, error) {
 	manifestData, _ := json.MarshalIndent(manifest, "", "  ")
 	writeZipFile(zw, "manifest.json", manifestData)
 
-	// Write subscription config data (rules + override)
 	exportData := ExportData{
 		Name:     subName,
 		Rules:    rules,
@@ -147,7 +140,6 @@ func (e *Exporter) ExportSubscription(subName string) ([]byte, error) {
 	exportDataJSON, _ := json.MarshalIndent(exportData, "", "  ")
 	writeZipFile(zw, "subscription/data.json", exportDataJSON)
 
-	// Write Sub-Store subscription data if included
 	if includeSubs && len(subs) > 0 {
 		for _, sub := range subs {
 			subData, _ := json.MarshalIndent(sub, "", "  ")
@@ -190,7 +182,6 @@ func (e *Exporter) Import(zipData []byte, forceImportSubs *bool) (*ImportResult,
 		SubscriptionName: manifest.SubscriptionName,
 	}
 
-	// Read subscription data (rules + override)
 	exportDataJSON, err := readZipFile(zr, "subscription/data.json")
 	if err == nil {
 		var exportData ExportData
@@ -209,12 +200,11 @@ func (e *Exporter) Import(zipData []byte, forceImportSubs *bool) (*ImportResult,
 		}
 	}
 
-	// Read platform config (global rules + override + settings + testSites, excluding mihomo/substore)
 	platformDataJSON, err := readZipFile(zr, "platform/config.json")
 	if err == nil {
 		var platformData struct {
-			GlobalRules    string                   `json:"globalRules"`
-			GlobalOverride string                   `json:"globalOverride"`
+			GlobalRules    string                 `json:"globalRules"`
+			GlobalOverride string                 `json:"globalOverride"`
 			Settings       map[string]interface{} `json:"settings"`
 			TestSites      []map[string]interface{} `json:"testSites"`
 		}
@@ -225,24 +215,20 @@ func (e *Exporter) Import(zipData []byte, forceImportSubs *bool) (*ImportResult,
 			if platformData.GlobalOverride != "" {
 				e.store.WriteSubOverride("__global__", platformData.GlobalOverride)
 			}
-			// Import settings but skip mihomo/substore
 			if platformData.Settings != nil {
 				delete(platformData.Settings, "mihomo")
 				delete(platformData.Settings, "substore")
-				// Merge into current config
 				if data, err := json.Marshal(platformData.Settings); err == nil {
 					json.Unmarshal(data, e.cfg)
 					e.cfg.Save()
 				}
 			}
-			// Extract testSites
 			if platformData.TestSites != nil {
 				result.TestSites = platformData.TestSites
 			}
 		}
 	}
 
-	// Decide whether to import Sub-Store subscriptions
 	shouldImportSubs := false
 	if forceImportSubs != nil {
 		shouldImportSubs = *forceImportSubs
@@ -251,6 +237,12 @@ func (e *Exporter) Import(zipData []byte, forceImportSubs *bool) (*ImportResult,
 	}
 
 	if shouldImportSubs {
+		existingSubs, _ := e.subStore.List()
+		existingNames := make(map[string]bool)
+		for _, s := range existingSubs {
+			existingNames[s.Name] = true
+		}
+
 		for _, f := range zr.File {
 			if len(f.Name) > 14 && f.Name[:14] == "subscriptions/" {
 				rc, err := f.Open()
@@ -260,12 +252,15 @@ func (e *Exporter) Import(zipData []byte, forceImportSubs *bool) (*ImportResult,
 				data, _ := io.ReadAll(rc)
 				rc.Close()
 
-				var sub substore.Subscription
+				var sub subscription.Subscription
 				if err := json.Unmarshal(data, &sub); err != nil {
 					continue
 				}
 
-				if err := e.subStore.CreateSubscription(sub); err == nil {
+				if existingNames[sub.Name] {
+					continue
+				}
+				if err := e.subStore.Create(sub); err == nil {
 					result.SubscriptionsImported++
 				}
 			}
@@ -274,8 +269,6 @@ func (e *Exporter) Import(zipData []byte, forceImportSubs *bool) (*ImportResult,
 
 	return result, nil
 }
-
-// --- Zip helpers ---
 
 func writeZipFile(zw *zip.Writer, name string, data []byte) error {
 	w, err := zw.Create(name)

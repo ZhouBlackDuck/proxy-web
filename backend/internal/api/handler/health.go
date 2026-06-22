@@ -18,9 +18,9 @@ func NewHealthHandler(pm *process.Manager) *HealthHandler {
 // Health returns the WebUI backend health status
 func (h *HealthHandler) Health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"status":  "ok",
-		"mihomo":  h.pm.MihomoAlive(),
-		"substore": h.pm.SubStoreAlive(),
+		"status":       "ok",
+		"mihomo":       h.pm.MihomoAlive(),
+		"subconverter": h.pm.SubConverterAlive(),
 	})
 }
 
@@ -61,7 +61,6 @@ func (h *HealthHandler) RestartMihomo(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	// Wait for ports to be released
 	time.Sleep(1 * time.Second)
 	if err := h.pm.StartMihomo(); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{
@@ -72,42 +71,42 @@ func (h *HealthHandler) RestartMihomo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "mihomo restarted"})
 }
 
-// StartSubStore starts the sub-store process
-func (h *HealthHandler) StartSubStore(w http.ResponseWriter, r *http.Request) {
-	if err := h.pm.StartSubStore(); err != nil {
+// StartSubConverter starts the subconverter process
+func (h *HealthHandler) StartSubConverter(w http.ResponseWriter, r *http.Request) {
+	if err := h.pm.StartSubConverter(); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": err.Error(),
 		})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"message": "sub-store started"})
+	writeJSON(w, http.StatusOK, map[string]string{"message": "subconverter started"})
 }
 
-// StopSubStore stops the sub-store process
-func (h *HealthHandler) StopSubStore(w http.ResponseWriter, r *http.Request) {
-	if err := h.pm.StopSubStore(); err != nil {
+// StopSubConverter stops the subconverter process
+func (h *HealthHandler) StopSubConverter(w http.ResponseWriter, r *http.Request) {
+	if err := h.pm.StopSubConverter(); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": err.Error(),
 		})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"message": "sub-store stopped"})
+	writeJSON(w, http.StatusOK, map[string]string{"message": "subconverter stopped"})
 }
 
-// RestartSubStore restarts the sub-store process
-func (h *HealthHandler) RestartSubStore(w http.ResponseWriter, r *http.Request) {
-	if err := h.pm.StopSubStore(); err != nil {
+// RestartSubConverter restarts the subconverter process
+func (h *HealthHandler) RestartSubConverter(w http.ResponseWriter, r *http.Request) {
+	if err := h.pm.StopSubConverter(); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": "stop failed: " + err.Error(),
 		})
 		return
 	}
 	time.Sleep(500 * time.Millisecond)
-	if err := h.pm.StartSubStore(); err != nil {
+	if err := h.pm.StartSubConverter(); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": "start failed: " + err.Error(),
 		})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"message": "sub-store restarted"})
+	writeJSON(w, http.StatusOK, map[string]string{"message": "subconverter restarted"})
 }

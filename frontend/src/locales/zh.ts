@@ -160,6 +160,7 @@ export default {
     rulesSaved: '已保存',
     overrideSaved: '已保存',
     activate: '激活',
+    mergedPreview: '合并配置预览',
 },
   profiles: {
     title: '配置管理',
@@ -271,7 +272,7 @@ export default {
     geoUpdating: '更新中...',
     processManagement: '进程管理',
     mihomo: 'Mihomo 内核',
-    substore: 'Sub-Store 服务',
+    subconverter: 'SubConverter 转换',
     start: '启动',
     stop: '停止',
     restart: '重启',

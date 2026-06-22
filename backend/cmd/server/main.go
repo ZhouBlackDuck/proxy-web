@@ -44,11 +44,10 @@ func main() {
 	// Initialize process manager
 	pm := process.NewManager(cfg)
 
-	// Start Sub-Store
-	if err := pm.StartSubStore(); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to start sub-store: %v\n", err)
-		// Don't exit - Sub-Store might not be available in dev
-		fmt.Fprintf(os.Stderr, "sub-store not started, subscription features may be unavailable\n")
+	// Start subconverter
+	if err := pm.StartSubConverter(); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to start subconverter: %v\n", err)
+		fmt.Fprintf(os.Stderr, "subconverter not started, subscription features may be unavailable\n")
 	}
 
 	// Start mihomo

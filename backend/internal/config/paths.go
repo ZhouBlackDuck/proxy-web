@@ -21,9 +21,9 @@ type Config struct {
 	JWTSecret                  string        `json:"jwtSecret,omitempty"`
 	Theme                      string        `json:"theme"`
 	Language                   string        `json:"language"`
-	Mihomo                     MihomoConfig  `json:"mihomo"`
-	SubStore                   SubStoreConfig `json:"substore"`
-	Ports                      PortSettings  `json:"ports"`
+	Mihomo                      MihomoConfig      `json:"mihomo"`
+	SubConverter                SubConverterConfig `json:"subconverter"`
+	Ports                       PortSettings       `json:"ports"`
 	ActiveSubscription         string        `json:"activeSubscription,omitempty"`
 	ExportIncludeSubscriptions bool          `json:"exportIncludeSubscriptions"`
 }
@@ -35,9 +35,9 @@ type MihomoConfig struct {
 	ConfigPath string `json:"configPath"`
 }
 
-type SubStoreConfig struct {
-	APIAddr string `json:"apiAddr"`
-	DataDir string `json:"dataDir"`
+type SubConverterConfig struct {
+	APIAddr    string `json:"apiAddr"`
+	BinaryPath string `json:"binaryPath"`
 }
 
 // PortSettings controls which ports are enabled and their values
@@ -73,9 +73,9 @@ func DefaultConfig(dataDir string) *Config {
 			BinaryPath: filepath.Join(dataDir, "mihomo", "bin", "mihomo"),
 			ConfigPath: filepath.Join(dataDir, "mihomo", "config.yaml"),
 		},
-		SubStore: SubStoreConfig{
-			APIAddr: "127.0.0.1:3001",
-			DataDir: filepath.Join(dataDir, "sub-store"),
+		SubConverter: SubConverterConfig{
+			APIAddr:    "127.0.0.1:25500",
+			BinaryPath: "/usr/bin/subconverter",
 		},
 	}
 }
@@ -147,7 +147,6 @@ func InitDirs(cfg *Config) error {
 	dirs := []string{
 		filepath.Join(cfg.DataDir, "webui", "profiles"),
 		filepath.Join(cfg.DataDir, "mihomo", "bin"),
-		cfg.SubStore.DataDir,
 	}
 
 	for _, dir := range dirs {

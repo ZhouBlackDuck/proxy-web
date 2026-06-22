@@ -58,7 +58,7 @@
                     <n-tag :type="proc.running ? 'success' : 'error'" size="small">
                       {{ proc.running ? t('dashboard.running') : t('dashboard.stopped') }}
                     </n-tag>
-                    <n-text>{{ proc.name === 'mihomo' ? t('settings.mihomo') : t('settings.substore') }}</n-text>
+                    <n-text>{{ proc.name === 'mihomo' ? t('settings.mihomo') : t('settings.subconverter') }}</n-text>
                     <n-text v-if="proc.running" depth="3" style="font-size: 12px">
                       PID: {{ proc.pid }} | {{ formatUptime(proc.uptime) }}
                     </n-text>
