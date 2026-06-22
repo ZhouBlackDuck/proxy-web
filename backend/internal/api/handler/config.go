@@ -260,7 +260,7 @@ func (h *ConfigHandler) buildConfig(subscriptionName string) ([]byte, error) {
 			subYaml = "proxies: []\nproxy-groups: []\nrules: []"
 			} else {
 				input := resolveSubInput(sub, h.tmpDir)
-				result, fetchErr := h.converter.FetchRaw(input, subscriptionName)
+				result, fetchErr := h.converter.FetchRaw(input, subscriptionName, sub.UA)
 				if fetchErr == nil && result.IsClash {
 					// Clash format: use raw content directly to preserve proxy-groups/rules
 					subYaml = result.Content

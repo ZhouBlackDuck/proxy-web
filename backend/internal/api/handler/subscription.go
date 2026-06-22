@@ -140,7 +140,7 @@ func (h *SubscriptionHandler) Sync(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := resolveSubInput(sub, h.tmpDir)
-	result, fetchErr := h.converter.FetchRaw(input, sub.Name)
+	result, fetchErr := h.converter.FetchRaw(input, sub.Name, sub.UA)
 	if fetchErr != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": fetchErr.Error()})
 		return
@@ -176,7 +176,7 @@ func (h *SubscriptionHandler) Download(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := resolveSubInput(sub, h.tmpDir)
-	result, fetchErr := h.converter.FetchRaw(input, sub.Name)
+	result, fetchErr := h.converter.FetchRaw(input, sub.Name, sub.UA)
 	if fetchErr != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": fetchErr.Error()})
 		return

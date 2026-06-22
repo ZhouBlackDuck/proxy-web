@@ -51,7 +51,8 @@ type FetchResult struct {
 // FetchRaw fetches the raw content of a subscription URL or local file
 // For base64 content, decodes and saves to temp file for subconverter.
 // The name parameter is used in the temp filename for per-subscription cleanup.
-func (c *Client) FetchRaw(input string, name string) (*FetchResult, error) {
+// The ua parameter overrides the default User-Agent for HTTP requests.
+func (c *Client) FetchRaw(input string, name string, ua string) (*FetchResult, error) {
 	var rawContent string
 
 	if strings.HasPrefix(input, "http://") || strings.HasPrefix(input, "https://") {
@@ -59,8 +60,12 @@ func (c *Client) FetchRaw(input string, name string) (*FetchResult, error) {
 		if err != nil {
 			return nil, fmt.Errorf("fetch raw: %w", err)
 		}
-		// 使用常见的订阅客户端 User-Agent，避免被服务器拦截
-		req.Header.Set("User-Agent", "ClashforWindows/0.20.0")
+		// Use custom UA if set, otherwise fall back to a common subscription client UA
+		if ua != "" {
+			req.Header.Set("User-Agent", ua)
+		} else {
+			req.Header.Set("User-Agent", "clash-verge/v2.4.7")
+		}
 		req.Header.Set("Accept", "*/*")
 
 		resp, err := c.http.Do(req)
