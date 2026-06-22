@@ -261,18 +261,20 @@ func (h *ConfigHandler) buildConfig(subscriptionName string) ([]byte, error) {
 			subYaml = "proxies: []\nproxy-groups: []\nrules: []"
 			} else {
 				input := h.resolveSubInput(sub)
-				raw, fetchErr := h.converter.FetchRaw(input)
-				if fetchErr == nil && subconverter.IsClashFormat(raw) {
+				result, fetchErr := h.converter.FetchRaw(input)
+				if fetchErr == nil && result.IsClash {
 					// Clash format: use raw content directly to preserve proxy-groups/rules
-					subYaml = raw
-				} else if fetchErr == nil {
-					// Non-Clash format: use subconverter to convert (proxy-groups will be empty)
-					converted, err := h.converter.Convert(input)
+					subYaml = result.Content
+				} else if fetchErr == nil && result.FilePath != "" {
+					// Non-Clash format (base64 decoded): use subconverter with local file
+					converted, err := h.converter.Convert(result.FilePath)
 					if err != nil {
 						subYaml = "proxies: []\nproxy-groups: []\nrules: []"
 					} else {
 						subYaml = fixNullProxyGroups(converted)
 					}
+				} else if fetchErr == nil {
+					subYaml = "proxies: []\nproxy-groups: []\nrules: []"
 				} else {
 					subYaml = "proxies: []\nproxy-groups: []\nrules: []"
 				}

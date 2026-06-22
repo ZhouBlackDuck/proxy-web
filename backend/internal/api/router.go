@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"path/filepath"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -36,7 +37,8 @@ func NewRouter(cfg *config.Config, store *store.FileStore, pm *process.Manager) 
 
 	// Shared dependencies
 	subStore := subscription.NewStore(cfg.DataDir)
-	converter := subconverter.NewClient(cfg.SubConverter.APIAddr)
+	tmpDir := filepath.Join(cfg.DataDir, "webui", "tmp")
+	converter := subconverter.NewClient(cfg.SubConverter.APIAddr, tmpDir)
 
 	// Handler instances
 	authH := handler.NewAuthHandler(cfg, store)
