@@ -156,9 +156,24 @@ func (m *Manager) StartSubConverter() error {
 		return fmt.Errorf("subconverter binary not found: %s", binaryPath)
 	}
 
+	// Redirect subconverter output to log file with size limit
+	logPath := filepath.Join(m.cfg.DataDir, "subconverter", "subconverter.log")
+	os.MkdirAll(filepath.Dir(logPath), 0755)
+
+	// Rotate log if exceeds 10MB
+	const maxLogSize = 10 * 1024 * 1024
+	if info, err := os.Stat(logPath); err == nil && info.Size() > maxLogSize {
+		os.Remove(logPath)
+	}
+
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return fmt.Errorf("open subconverter log: %w", err)
+	}
+
 	cmd := exec.Command(binaryPath)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start subconverter: %w", err)

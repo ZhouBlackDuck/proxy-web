@@ -17,6 +17,10 @@ type Client struct {
 }
 
 func NewClient(baseURL string) *Client {
+	// Ensure URL has scheme
+	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+		baseURL = "http://" + baseURL
+	}
 	return &Client{
 		baseURL: baseURL,
 		http: &http.Client{
