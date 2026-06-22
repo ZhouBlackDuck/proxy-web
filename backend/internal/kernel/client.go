@@ -45,26 +45,26 @@ type Memory struct {
 }
 
 type Config struct {
-	Port               int    `json:"port"`
-	SocksPort          int    `json:"socks-port"`
-	RedirPort          int    `json:"redir-port"`
-	TProxyPort         int    `json:"tproxy-port"`
-	MixedPort          int    `json:"mixed-port"`
-	AllowLan           bool   `json:"allow-lan"`
-	BindAddress        string `json:"bind-address"`
-	Mode               string `json:"mode"`
-	LogLevel           string `json:"log-level"`
-	IPv6               bool   `json:"ipv6"`
-	Sniffing           bool   `json:"sniffing"`
-	TcpConcurrent      bool   `json:"tcp-concurrent"`
-	InterfaceName      string `json:"interface-name"`
-	Tun                TunConfig `json:"tun"`
+	Port               int    `json:"port" yaml:"port"`
+	SocksPort          int    `json:"socks-port" yaml:"socks-port"`
+	RedirPort          int    `json:"redir-port" yaml:"redir-port"`
+	TProxyPort         int    `json:"tproxy-port" yaml:"tproxy-port"`
+	MixedPort          int    `json:"mixed-port" yaml:"mixed-port"`
+	AllowLan           bool   `json:"allow-lan" yaml:"allow-lan"`
+	BindAddress        string `json:"bind-address" yaml:"bind-address"`
+	Mode               string `json:"mode" yaml:"mode"`
+	LogLevel           string `json:"log-level" yaml:"log-level"`
+	IPv6               bool   `json:"ipv6" yaml:"ipv6"`
+	Sniffing           bool   `json:"sniffing" yaml:"sniffing"`
+	TcpConcurrent      bool   `json:"tcp-concurrent" yaml:"tcp-concurrent"`
+	InterfaceName      string `json:"interface-name" yaml:"interface-name"`
+	Tun                TunConfig `json:"tun" yaml:"tun"`
 }
 
 type TunConfig struct {
-	Enable     bool   `json:"enable"`
-	Stack      string `json:"stack"`
-	AutoRoute  bool   `json:"auto-route"`
+	Enable     bool   `json:"enable" yaml:"enable"`
+	Stack      string `json:"stack" yaml:"stack"`
+	AutoRoute  bool   `json:"auto-route" yaml:"auto-route"`
 }
 
 type Proxy struct {
@@ -203,9 +203,9 @@ func (c *Client) PatchConfig(patch map[string]interface{}) error {
 	return c.doJSON("PATCH", "/configs", patch, nil)
 }
 
-// PutConfig reloads the entire config
-func (c *Client) PutConfig(payload string) error {
-	body := map[string]string{"payload": payload}
+// PutConfig reloads config from a file path on disk
+func (c *Client) PutConfig(configPath string) error {
+	body := map[string]string{"path": configPath}
 	return c.doJSON("PUT", "/configs", body, nil)
 }
 

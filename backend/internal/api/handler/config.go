@@ -76,7 +76,7 @@ func (h *ConfigHandler) Activate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.kernel.PutConfig(string(finalYaml)); err != nil {
+	if err := h.kernel.PutConfig(h.cfg.Mihomo.ConfigPath); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{
 			"error": "apply to mihomo: " + err.Error(),
 		})
@@ -368,25 +368,50 @@ func (h *ConfigHandler) UpdatePorts(w http.ResponseWriter, r *http.Request) {
 		finalYaml, err := h.buildConfig(h.cfg.ActiveSubscription)
 		if err == nil {
 			h.store.WriteMihomoConfig(finalYaml)
-			h.kernel.PutConfig(string(finalYaml))
+			h.kernel.PutConfig(h.cfg.Mihomo.ConfigPath)
 		}
 	} else {
-		// No active subscription: patch kernel ports directly
-		patch := map[string]interface{}{}
-		portMap := map[string]config.PortEntry{
-			"mixed-port":  ports.MixedPort,
-			"port":        ports.HTTPPort,
-			"socks-port":  ports.SocksPort,
-			"redir-port":  ports.RedirPort,
-			"tproxy-port": ports.TProxyPort,
-		}
-		for key, entry := range portMap {
-			if entry.Enabled {
-				patch[key] = entry.Port
+		// No active subscription: read current config from disk, update ports, reload
+		configPath := h.cfg.Mihomo.ConfigPath
+		data, err := os.ReadFile(configPath)
+		if err == nil {
+			var node yaml.Node
+			if yaml.Unmarshal(data, &node) == nil {
+				// Get mapping node
+				var m *yaml.Node
+				if node.Kind == yaml.DocumentNode && len(node.Content) > 0 && node.Content[0].Kind == yaml.MappingNode {
+					m = node.Content[0]
+				}
+				if m != nil {
+					portMap := map[string]config.PortEntry{
+						"mixed-port":  ports.MixedPort,
+						"port":        ports.HTTPPort,
+						"socks-port":  ports.SocksPort,
+						"redir-port":  ports.RedirPort,
+						"tproxy-port": ports.TProxyPort,
+					}
+					for key, entry := range portMap {
+						if entry.Enabled {
+							// Find and update the key in the mapping
+							for i := 0; i < len(m.Content); i += 2 {
+								if m.Content[i].Value == key {
+									m.Content[i+1] = &yaml.Node{
+										Kind:  yaml.ScalarNode,
+										Tag:   "!!int",
+										Value: fmt.Sprintf("%d", entry.Port),
+									}
+									break
+								}
+							}
+						}
+					}
+					out, err := yaml.Marshal(&node)
+					if err == nil {
+						os.WriteFile(configPath, out, 0644)
+						h.kernel.PutConfig(configPath)
+					}
+				}
 			}
-		}
-		if len(patch) > 0 {
-			h.kernel.PatchConfig(patch)
 		}
 	}
 

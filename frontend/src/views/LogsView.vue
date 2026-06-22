@@ -74,8 +74,11 @@ const paused = ref(false)
 function togglePause() {
   paused.value = !paused.value
   if (paused.value) {
-    // Pausing: mark current time so resume only shows logs from now on
-    logStore.visibleSince = Math.floor(Date.now() / 1000)
+    // Pausing: record current time, hide logs arriving after this
+    logStore.pauseTime = Math.floor(Date.now() / 1000)
+  } else {
+    // Resuming: clear pause filter, show all current logs
+    logStore.pauseTime = null
   }
 }
 
@@ -117,7 +120,7 @@ async function handleClearLogs() {
       headers: { Authorization: `Bearer ${token}` },
     })
     logStore.clearLogs()
-    logStore.visibleSince = null
+    logStore.pauseTime = null
   } catch {
     // ignore
   }

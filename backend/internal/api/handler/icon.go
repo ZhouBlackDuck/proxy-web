@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"crypto/sha256"
 	"fmt"
 
 	"github.com/go-chi/chi/v5"
@@ -56,14 +57,17 @@ func (h *IconHandler) UploadIcon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate unique filename
-	filename := fmt.Sprintf("icon_%d.svg", len(getFiles(iconsDir))+1)
-	filepath := filepath.Join(iconsDir, filename)
+	// Generate filename from content hash
+	hash := sha256.Sum256(content)
+	filename := fmt.Sprintf("icon_%x.svg", hash[:6])
+	iconPath := filepath.Join(iconsDir, filename)
 
-	// Write file
-	if err := os.WriteFile(filepath, content, 0644); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save icon"})
-		return
+	// Skip write if identical file already exists
+	if _, err := os.Stat(iconPath); os.IsNotExist(err) {
+		if err := os.WriteFile(iconPath, content, 0644); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save icon"})
+			return
+		}
 	}
 
 	// Return icon URL
