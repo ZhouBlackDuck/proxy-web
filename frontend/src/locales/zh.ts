@@ -40,6 +40,8 @@ export default {
     oldPassword: '旧密码',
     newPassword: '新密码',
     passwordChanged: '密码修改成功',
+    oldPasswordPlaceholder: '请输入旧密码',
+    newPasswordPlaceholder: '请输入新密码',
   },
   dashboard: {
     kernelStatus: '内核状态',

@@ -37,9 +37,11 @@ export default {
     loginSuccess: 'Login successful',
     setupSuccess: 'Password set successfully',
     changePassword: 'Change Password',
-    oldPassword: 'Old Password',
-    newPassword: 'New Password',
+    oldPassword: 'Old',
+    newPassword: 'New',
     passwordChanged: 'Password changed',
+    oldPasswordPlaceholder: 'Enter old password',
+    newPasswordPlaceholder: 'Enter new password',
   },
   dashboard: {
     kernelStatus: 'Kernel Status',

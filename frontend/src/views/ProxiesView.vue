@@ -283,8 +283,7 @@ async function handleTestGroup(groupName: string) {
 
 async function handleTestAll() {
   testingAll.value = true
-  for (const group of groups.value) {
-    testingGroup.value = group.name
+  await Promise.allSettled(groups.value.map(async (group) => {
     try {
       const result = await kernelApi.testGroupDelay(group.name, 'http://www.gstatic.com/generate_204', 10000)
       if (!delayMap.value[group.name]) delayMap.value[group.name] = {}
@@ -299,7 +298,7 @@ async function handleTestAll() {
         }
       }
     }
-  }
+  }))
   testingGroup.value = null
   testingAll.value = false
   message.success(t('proxies.allTestDone'))

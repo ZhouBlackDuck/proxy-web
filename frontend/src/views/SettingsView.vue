@@ -34,10 +34,10 @@
           <n-card :title="t('settings.changePassword')" size="small" style="height: 100%">
             <n-form label-placement="left" label-width="100">
               <n-form-item :label="t('auth.oldPassword')">
-                <n-input v-model:value="oldPassword" type="password" show-password-on="click" />
+                <n-input v-model:value="oldPassword" type="password" show-password-on="click" :placeholder="t('auth.oldPasswordPlaceholder')" />
               </n-form-item>
               <n-form-item :label="t('auth.newPassword')">
-                <n-input v-model:value="newPassword" type="password" show-password-on="click" />
+                <n-input v-model:value="newPassword" type="password" show-password-on="click" :placeholder="t('auth.newPasswordPlaceholder')" />
               </n-form-item>
               <n-form-item>
                 <n-button type="primary" :loading="changingPassword" @click="handleChangePassword">
