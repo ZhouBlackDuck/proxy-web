@@ -23,7 +23,7 @@ export const testApi = {
   },
 
   async testSingle(url: string): Promise<TestResult> {
-    const { data } = await client.post('/test', { url })
+    const { data } = await client.post('/test/single', { url })
     return data
   },
 }

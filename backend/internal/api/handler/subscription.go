@@ -111,9 +111,10 @@ func (h *SubscriptionHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "deleted"})
 }
 
-// cleanupTempFiles removes temporary files for a subscription
+// cleanupTempFiles removes temporary files for a specific subscription
 func (h *SubscriptionHandler) cleanupTempFiles(name string) {
-	pattern := filepath.Join(h.tmpDir, "sub_*.txt")
+	// Match FetchRaw naming: sub_<name>_<timestamp>.txt
+	pattern := filepath.Join(h.tmpDir, "sub_"+name+"_*.txt")
 	files, err := filepath.Glob(pattern)
 	if err != nil {
 		return
@@ -121,6 +122,8 @@ func (h *SubscriptionHandler) cleanupTempFiles(name string) {
 	for _, f := range files {
 		os.Remove(f)
 	}
+	// Also remove the local-content temp file written by resolveInput
+	os.Remove(filepath.Join(h.tmpDir, name+".yaml"))
 }
 
 // Sync validates a subscription by converting it through subconverter
@@ -136,8 +139,23 @@ func (h *SubscriptionHandler) Sync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := h.resolveInput(sub)
-	if _, err := h.converter.Convert(input); err != nil {
+	input := resolveSubInput(sub, h.tmpDir)
+	result, fetchErr := h.converter.FetchRaw(input, sub.Name)
+	if fetchErr != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": fetchErr.Error()})
+		return
+	}
+	if result.IsClash {
+		// Already valid Clash config, no conversion needed
+		writeJSON(w, http.StatusOK, map[string]string{"message": "sync ok"})
+		return
+	}
+	// Non-Clash: convert via subconverter (URL for remote, temp file for local)
+	convertInput := input
+	if sub.Source == "local" && result.FilePath != "" {
+		convertInput = result.FilePath
+	}
+	if _, err := h.converter.Convert(convertInput); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
@@ -157,11 +175,27 @@ func (h *SubscriptionHandler) Download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := h.resolveInput(sub)
-	config, err := h.converter.Convert(input)
-	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+	input := resolveSubInput(sub, h.tmpDir)
+	result, fetchErr := h.converter.FetchRaw(input, sub.Name)
+	if fetchErr != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": fetchErr.Error()})
 		return
+	}
+
+	var config string
+	if result.IsClash {
+		config = result.Content
+	} else {
+		convertInput := input
+		if sub.Source == "local" && result.FilePath != "" {
+			convertInput = result.FilePath
+		}
+		config, err = h.converter.Convert(convertInput)
+		if err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+			return
+		}
+		config = fixNullProxyGroups(config)
 	}
 
 	w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
@@ -169,13 +203,3 @@ func (h *SubscriptionHandler) Download(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(config))
 }
 
-// resolveInput returns the subconverter input: URL for remote, temp file path for local
-func (h *SubscriptionHandler) resolveInput(sub *subscription.Subscription) string {
-	if sub.Source == "url" && sub.URL != "" {
-		return sub.URL
-	}
-	// Local subscription: write content to a temp file and return the path
-	tmpFile := filepath.Join(h.tmpDir, sub.Name+".yaml")
-	os.WriteFile(tmpFile, []byte(sub.Content), 0644)
-	return tmpFile
-}

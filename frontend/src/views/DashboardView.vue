@@ -219,6 +219,7 @@ import { useKernelStore } from '../stores/kernel'
 import { kernelApi } from '../api/kernel'
 import { testApi, type TestResult, type TestSite } from '../api/test'
 import { useWebSocket } from '../composables/useWebSocket'
+import { formatBytes } from '../utils/format'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -655,15 +656,6 @@ function cancelEditSite() {
 
 function handleEditModalClose(val: boolean) {
   if (!val) cancelEditSite()
-}
-
-function formatBytes(bytes: number): string {
-  if (!bytes || bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(Math.abs(bytes)) / Math.log(k))
-  const val = parseFloat((bytes / Math.pow(k, i)).toFixed(1))
-  return val + ' ' + sizes[i]
 }
 
 function formatSpeed(bytesPerSec: number): string {

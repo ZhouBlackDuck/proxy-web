@@ -49,8 +49,9 @@ type FetchResult struct {
 }
 
 // FetchRaw fetches the raw content of a subscription URL or local file
-// For base64 content, decodes and saves to temp file for subconverter
-func (c *Client) FetchRaw(input string) (*FetchResult, error) {
+// For base64 content, decodes and saves to temp file for subconverter.
+// The name parameter is used in the temp filename for per-subscription cleanup.
+func (c *Client) FetchRaw(input string, name string) (*FetchResult, error) {
 	var rawContent string
 
 	if strings.HasPrefix(input, "http://") || strings.HasPrefix(input, "https://") {
@@ -103,7 +104,7 @@ func (c *Client) FetchRaw(input string) (*FetchResult, error) {
 
 	// For non-Clash content, save to temp file for subconverter
 	if !result.IsClash {
-		tmpFile := filepath.Join(c.tmpDir, "sub_"+time.Now().Format("20060102150405")+".txt")
+		tmpFile := filepath.Join(c.tmpDir, "sub_"+name+"_"+time.Now().Format("20060102150405")+".txt")
 		os.WriteFile(tmpFile, []byte(result.Content), 0644)
 		result.FilePath = tmpFile
 	}

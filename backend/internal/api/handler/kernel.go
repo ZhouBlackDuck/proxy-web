@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -229,14 +228,3 @@ func (h *KernelHandler) GeoUpdate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "GeoIP/GeoSite update triggered"})
 }
 
-// --- Helpers ---
-
-func extractPathParam(path, prefix string) string {
-	name := strings.TrimPrefix(path, prefix)
-	// Remove trailing path segments (e.g., /delay)
-	if idx := strings.Index(name, "/"); idx != -1 {
-		name = name[:idx]
-	}
-	decoded, _ := url.PathUnescape(name)
-	return decoded
-}

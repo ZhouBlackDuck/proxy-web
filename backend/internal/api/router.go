@@ -43,7 +43,6 @@ func NewRouter(cfg *config.Config, store *store.FileStore, pm *process.Manager) 
 	// Handler instances
 	authH := handler.NewAuthHandler(cfg, store)
 	healthH := handler.NewHealthHandler(pm)
-	profileH := handler.NewProfileHandler(store)
 	configH := handler.NewConfigHandler(cfg, store, subStore, converter)
 	iconH := handler.NewIconHandler(cfg)
 	kernelH := handler.NewKernelHandler(cfg)
@@ -75,13 +74,6 @@ func NewRouter(cfg *config.Config, store *store.FileStore, pm *process.Manager) 
 		r.Post("/api/process/subconverter/start", healthH.StartSubConverter)
 		r.Post("/api/process/subconverter/stop", healthH.StopSubConverter)
 		r.Post("/api/process/subconverter/restart", healthH.RestartSubConverter)
-
-		// Profiles CRUD (kept for backward compatibility)
-		r.Get("/api/profiles", profileH.List)
-		r.Post("/api/profiles", profileH.Create)
-		r.Get("/api/profiles/{id}", profileH.Get)
-		r.Put("/api/profiles/{id}", profileH.Update)
-		r.Delete("/api/profiles/{id}", profileH.Delete)
 
 		// Config validation and port management
 		r.Post("/api/config/validate", configH.ValidateConfig)

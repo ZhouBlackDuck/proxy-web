@@ -145,7 +145,6 @@ func (c *Config) Save() error {
 // InitDirs creates all necessary data directories
 func InitDirs(cfg *Config) error {
 	dirs := []string{
-		filepath.Join(cfg.DataDir, "webui", "profiles"),
 		filepath.Join(cfg.DataDir, "mihomo", "bin"),
 	}
 
@@ -158,25 +157,3 @@ func InitDirs(cfg *Config) error {
 	return nil
 }
 
-// Paths returns commonly used paths
-type Paths struct {
-	DataDir       string
-	WebUIDir      string
-	ProfilesDir   string
-	MihomoDir     string
-	SubStoreDir   string
-	SettingsFile  string
-	ProfilesFile  string
-}
-
-func GetPaths(dataDir string) *Paths {
-	return &Paths{
-		DataDir:      dataDir,
-		WebUIDir:     filepath.Join(dataDir, "webui"),
-		ProfilesDir:  filepath.Join(dataDir, "webui", "profiles"),
-		MihomoDir:    filepath.Join(dataDir, "mihomo"),
-		SubStoreDir:  filepath.Join(dataDir, "sub-store"),
-		SettingsFile: filepath.Join(dataDir, "webui", "settings.json"),
-		ProfilesFile: filepath.Join(dataDir, "webui", "profiles.json"),
-	}
-}

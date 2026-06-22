@@ -44,6 +44,7 @@ import type { DataTableColumns } from 'naive-ui'
 import AppLayout from '../components/layout/AppLayout.vue'
 import { useWebSocket } from '../composables/useWebSocket'
 import { kernelApi, type Connection, type ConnectionsSnapshot } from '../api/kernel'
+import { formatBytes } from '../utils/format'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -176,11 +177,4 @@ async function handleCloseAll() {
   }
 }
 
-function formatBytes(bytes: number): string {
-  if (!bytes || bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
-}
 </script>

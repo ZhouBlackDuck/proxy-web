@@ -28,6 +28,7 @@ type processInfo struct {
 	started  time.Time
 	restarts int
 	stopCh   chan struct{} // signals that stop was intentional
+	done     chan struct{} // closed when process exits
 	mu       sync.Mutex
 }
 
@@ -42,9 +43,9 @@ type ProcessStatus struct {
 
 func NewManager(cfg *config.Config) *Manager {
 	return &Manager{
-		cfg:         cfg,
-		mihomo:      &processInfo{stopCh: make(chan struct{}, 1)},
-		subconverter: &processInfo{stopCh: make(chan struct{}, 1)},
+		cfg:          cfg,
+		mihomo:       &processInfo{stopCh: make(chan struct{}, 1), done: make(chan struct{})},
+		subconverter: &processInfo{stopCh: make(chan struct{}, 1), done: make(chan struct{})},
 	}
 }
 
@@ -91,6 +92,7 @@ func (m *Manager) StartMihomo() error {
 	m.mihomo.pid = cmd.Process.Pid
 	m.mihomo.started = time.Now()
 	m.mihomo.stopCh = make(chan struct{}, 1)
+	m.mihomo.done = make(chan struct{})
 
 	// Wait for health check
 	if err := waitForHTTP(fmt.Sprintf("http://%s/", m.cfg.Mihomo.APIAddr), 30*time.Second); err != nil {
@@ -106,40 +108,7 @@ func (m *Manager) StartMihomo() error {
 
 // StopMihomo stops the mihomo process
 func (m *Manager) StopMihomo() error {
-	m.mihomo.mu.Lock()
-	defer m.mihomo.mu.Unlock()
-
-	if !m.mihomo.running || m.mihomo.cmd == nil {
-		return nil
-	}
-
-	select {
-	case m.mihomo.stopCh <- struct{}{}:
-	default:
-	}
-	m.mihomo.running = false
-
-	if m.mihomo.cmd.Process != nil {
-		m.mihomo.cmd.Process.Signal(syscall.SIGTERM)
-	}
-
-	deadline := time.After(10 * time.Second)
-	for {
-		select {
-		case <-deadline:
-			if m.mihomo.cmd.Process != nil {
-				m.mihomo.cmd.Process.Kill()
-			}
-			fmt.Println("mihomo force killed")
-			m.mihomo.pid = 0
-			return nil
-		default:
-			if m.mihomo.pid == 0 {
-				return nil
-			}
-			time.Sleep(200 * time.Millisecond)
-		}
-	}
+	return m.stopProcess("mihomo", m.mihomo)
 }
 
 // StartSubConverter starts the subconverter process
@@ -184,6 +153,7 @@ func (m *Manager) StartSubConverter() error {
 	m.subconverter.pid = cmd.Process.Pid
 	m.subconverter.started = time.Now()
 	m.subconverter.stopCh = make(chan struct{}, 1)
+	m.subconverter.done = make(chan struct{})
 
 	// Wait for health check
 	if err := waitForHTTP(fmt.Sprintf("http://%s/version", m.cfg.SubConverter.APIAddr), 30*time.Second); err != nil {
@@ -198,39 +168,44 @@ func (m *Manager) StartSubConverter() error {
 
 // StopSubConverter stops the subconverter process
 func (m *Manager) StopSubConverter() error {
-	m.subconverter.mu.Lock()
-	defer m.subconverter.mu.Unlock()
+	return m.stopProcess("subconverter", m.subconverter)
+}
 
-	if !m.subconverter.running || m.subconverter.cmd == nil {
+// stopProcess gracefully stops a managed process, force-killing after 10s timeout.
+// It releases the lock while waiting so monitorProcess can acquire it to signal exit.
+func (m *Manager) stopProcess(name string, pi *processInfo) error {
+	pi.mu.Lock()
+	if !pi.running || pi.cmd == nil {
+		pi.mu.Unlock()
 		return nil
 	}
 
 	select {
-	case m.subconverter.stopCh <- struct{}{}:
+	case pi.stopCh <- struct{}{}:
 	default:
 	}
-	m.subconverter.running = false
+	pi.running = false
 
-	if m.subconverter.cmd.Process != nil {
-		m.subconverter.cmd.Process.Signal(syscall.SIGTERM)
+	if pi.cmd.Process != nil {
+		pi.cmd.Process.Signal(syscall.SIGTERM)
 	}
 
-	deadline := time.After(10 * time.Second)
-	for {
-		select {
-		case <-deadline:
-			if m.subconverter.cmd.Process != nil {
-				m.subconverter.cmd.Process.Kill()
-			}
-			fmt.Println("subconverter force killed")
-			m.subconverter.pid = 0
-			return nil
-		default:
-			if m.subconverter.pid == 0 {
-				return nil
-			}
-			time.Sleep(200 * time.Millisecond)
+	done := pi.done
+	pi.mu.Unlock()
+
+	// Wait outside lock so monitorProcess can acquire it and close done
+	select {
+	case <-done:
+		return nil
+	case <-time.After(10 * time.Second):
+		pi.mu.Lock()
+		if pi.cmd != nil && pi.cmd.Process != nil {
+			pi.cmd.Process.Kill()
 		}
+		pi.pid = 0
+		pi.mu.Unlock()
+		fmt.Printf("%s force killed\n", name)
+		return nil
 	}
 }
 
@@ -305,6 +280,7 @@ func (m *Manager) monitorProcess(name string, pi *processInfo, logFile *os.File)
 	wasRunning := pi.running
 	pi.running = false
 	pi.pid = 0
+	close(pi.done)
 	pi.mu.Unlock()
 
 	select {

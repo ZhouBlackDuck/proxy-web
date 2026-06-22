@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -260,8 +259,8 @@ func (h *ConfigHandler) buildConfig(subscriptionName string) ([]byte, error) {
 		if err != nil || sub == nil {
 			subYaml = "proxies: []\nproxy-groups: []\nrules: []"
 			} else {
-				input := h.resolveSubInput(sub)
-				result, fetchErr := h.converter.FetchRaw(input)
+				input := resolveSubInput(sub, h.tmpDir)
+				result, fetchErr := h.converter.FetchRaw(input, subscriptionName)
 				if fetchErr == nil && result.IsClash {
 					// Clash format: use raw content directly to preserve proxy-groups/rules
 					subYaml = result.Content
@@ -324,24 +323,6 @@ func (h *ConfigHandler) buildConfig(subscriptionName string) ([]byte, error) {
 	return finalYaml, nil
 }
 
-// resolveSubInput returns the subconverter input: URL for remote, temp file path for local
-func (h *ConfigHandler) resolveSubInput(sub *subscription.Subscription) string {
-	if sub.Source == "url" && sub.URL != "" {
-		return sub.URL
-	}
-	tmpFile := filepath.Join(h.tmpDir, sub.Name+".yaml")
-	os.WriteFile(tmpFile, []byte(sub.Content), 0644)
-	return tmpFile
-}
-
-// fixNullProxyGroups replaces "proxy-groups: ~" with "proxy-groups: []" in subconverter output
-func fixNullProxyGroups(yaml string) string {
-	yaml = strings.ReplaceAll(yaml, "proxy-groups: ~", "proxy-groups: []")
-	yaml = strings.ReplaceAll(yaml, "Proxy Group: ~", "proxy-groups: []")
-	yaml = strings.ReplaceAll(yaml, "rules: ~", "rules: []")
-	yaml = strings.ReplaceAll(yaml, "Rule: ~", "rules: []")
-	return yaml
-}
 
 // ValidateConfig validates a yaml config
 func (h *ConfigHandler) ValidateConfig(w http.ResponseWriter, r *http.Request) {

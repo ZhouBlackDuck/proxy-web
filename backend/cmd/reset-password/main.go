@@ -1,23 +1,13 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 
 	"golang.org/x/crypto/bcrypt"
-)
 
-type Settings struct {
-	PasswordHash string `json:"passwordHash"`
-	Theme        string `json:"theme,omitempty"`
-	Language     string `json:"language,omitempty"`
-	Mihomo       any    `json:"mihomo,omitempty"`
-	SubStore     any    `json:"substore,omitempty"`
-	Ports        any    `json:"ports,omitempty"`
-	Active       string `json:"activeSubscription,omitempty"`
-	ExportSubs   bool   `json:"exportIncludeSubscriptions,omitempty"`
-}
+	"github.com/zwforum/proxy-web/internal/config"
+)
 
 func main() {
 	if len(os.Args) < 2 {
@@ -27,40 +17,27 @@ func main() {
 	}
 
 	newPassword := os.Args[1]
-	settingsFile := "/data/webui/settings.json"
 
-	// Read current settings
-	data, err := os.ReadFile(settingsFile)
+	cfg, err := config.Load()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading settings file: %v\n", err)
-		fmt.Println("Please start the container first to initialize the settings.")
+		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
 		os.Exit(1)
 	}
 
-	var settings Settings
-	if err := json.Unmarshal(data, &settings); err != nil {
-		fmt.Fprintf(os.Stderr, "Error parsing settings: %v\n", err)
+	if cfg.PasswordHash == "" {
+		fmt.Println("No password is currently set. Please start the container first to initialize.")
 		os.Exit(1)
 	}
 
-	// Hash new password
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error hashing password: %v\n", err)
 		os.Exit(1)
 	}
 
-	settings.PasswordHash = string(hash)
-
-	// Write back
-	updatedData, err := json.MarshalIndent(settings, "", "  ")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error marshaling settings: %v\n", err)
-		os.Exit(1)
-	}
-
-	if err := os.WriteFile(settingsFile, updatedData, 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing settings: %v\n", err)
+	cfg.PasswordHash = string(hash)
+	if err := cfg.Save(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error saving config: %v\n", err)
 		os.Exit(1)
 	}
 
