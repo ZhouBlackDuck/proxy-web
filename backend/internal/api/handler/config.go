@@ -362,12 +362,31 @@ func (h *ConfigHandler) UpdatePorts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If there's an active subscription, regenerate and push config
+	// Apply port changes to the running kernel
 	if h.cfg.ActiveSubscription != "" {
+		// Active subscription: regenerate full config (includes ports via pipeline)
 		finalYaml, err := h.buildConfig(h.cfg.ActiveSubscription)
 		if err == nil {
 			h.store.WriteMihomoConfig(finalYaml)
 			h.kernel.PutConfig(string(finalYaml))
+		}
+	} else {
+		// No active subscription: patch kernel ports directly
+		patch := map[string]interface{}{}
+		portMap := map[string]config.PortEntry{
+			"mixed-port":  ports.MixedPort,
+			"port":        ports.HTTPPort,
+			"socks-port":  ports.SocksPort,
+			"redir-port":  ports.RedirPort,
+			"tproxy-port": ports.TProxyPort,
+		}
+		for key, entry := range portMap {
+			if entry.Enabled {
+				patch[key] = entry.Port
+			}
+		}
+		if len(patch) > 0 {
+			h.kernel.PatchConfig(patch)
 		}
 	}
 

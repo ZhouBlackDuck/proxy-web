@@ -43,7 +43,7 @@
                 <n-button
                   size="tiny"
                   @click="handleTestGroup(group.name)"
-                  :loading="testingGroup === group.name"
+                  :loading="testingGroups[group.name]"
                 >
                   {{ t('proxies.testSpeed') }}
                 </n-button>
@@ -96,7 +96,7 @@ const message = useMessage()
 
 const loading = ref(false)
 const searchText = ref('')
-const testingGroup = ref<string | null>(null)
+const testingGroups = ref<Record<string, boolean>>({})
 const testingAll = ref(false)
 
 const groups = ref<ProxyNode[]>([])
@@ -254,7 +254,7 @@ async function handleSelectNode(groupName: string, nodeName: string, groupType: 
 }
 
 async function handleTestGroup(groupName: string) {
-  testingGroup.value = groupName
+  testingGroups.value[groupName] = true
   try {
     const result = await kernelApi.testGroupDelay(groupName, 'http://www.gstatic.com/generate_204', 10000)
     if (!delayMap.value[groupName]) delayMap.value[groupName] = {}
@@ -277,12 +277,16 @@ async function handleTestGroup(groupName: string) {
       message.error(t('proxies.testFailed') + ': ' + (err.message || err))
     }
   } finally {
-    testingGroup.value = null
+    delete testingGroups.value[groupName]
   }
 }
 
 async function handleTestAll() {
   testingAll.value = true
+  // Mark all groups as testing
+  for (const g of groups.value) {
+    testingGroups.value[g.name] = true
+  }
   await Promise.allSettled(groups.value.map(async (group) => {
     try {
       const result = await kernelApi.testGroupDelay(group.name, 'http://www.gstatic.com/generate_204', 10000)
@@ -297,9 +301,10 @@ async function handleTestAll() {
           delayMap.value[group.name][node] = -1
         }
       }
+    } finally {
+      delete testingGroups.value[group.name]
     }
   }))
-  testingGroup.value = null
   testingAll.value = false
   message.success(t('proxies.allTestDone'))
 }

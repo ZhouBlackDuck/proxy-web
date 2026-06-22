@@ -5,10 +5,12 @@ export interface LogEntry {
   time: string
   type: string
   payload: string
+  timestamp: number
 }
 
 export const useLogStore = defineStore('logs', () => {
   const logs = ref<LogEntry[]>([])
+  const visibleSince = ref<number | null>(null)
 
   function clearLogs() {
     logs.value = []
@@ -17,6 +19,12 @@ export const useLogStore = defineStore('logs', () => {
   function getFilteredLogs(levelFilter: string, searchText: string): LogEntry[] {
     const levelOrder: Record<string, number> = { debug: 0, info: 1, warning: 2, error: 3 }
     let filtered = logs.value
+
+    // Filter by time: only show logs after visibleSince (set on pause→resume)
+    if (visibleSince.value !== null) {
+      const since = visibleSince.value
+      filtered = filtered.filter(log => log.timestamp >= since)
+    }
 
     // Filter by level: show logs >= selected level
     if (levelFilter && levelFilter !== 'all') {
@@ -51,5 +59,5 @@ export const useLogStore = defineStore('logs', () => {
     }
   }
 
-  return { logs, clearLogs, getFilteredLogs, fetchLogs }
+  return { logs, visibleSince, clearLogs, getFilteredLogs, fetchLogs }
 })

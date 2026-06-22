@@ -25,7 +25,7 @@
           <n-button
             :type="paused ? 'default' : 'primary'"
             size="small"
-            @click="paused = !paused"
+            @click="togglePause"
           >
             {{ paused ? t('logs.paused') : t('logs.live') }}
           </n-button>
@@ -71,6 +71,14 @@ const logLevel = ref('all')
 const searchText = ref('')
 const paused = ref(false)
 
+function togglePause() {
+  paused.value = !paused.value
+  if (paused.value) {
+    // Pausing: mark current time so resume only shows logs from now on
+    logStore.visibleSince = Math.floor(Date.now() / 1000)
+  }
+}
+
 const levelOptions = [
   { label: 'All', value: 'all' },
   { label: 'Debug', value: 'debug' },
@@ -109,6 +117,7 @@ async function handleClearLogs() {
       headers: { Authorization: `Bearer ${token}` },
     })
     logStore.clearLogs()
+    logStore.visibleSince = null
   } catch {
     // ignore
   }

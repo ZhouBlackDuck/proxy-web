@@ -66,7 +66,7 @@ COPY docker/entrypoint.sh /entrypoint.sh
 RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 # Create data directories
-RUN mkdir -p /data/webui/profiles /data/mihomo/bin
+RUN mkdir -p /data/mihomo/bin
 
 # Data volume
 VOLUME ["/data"]
