@@ -142,6 +142,7 @@ export default {
     deleteLabel: '删除',
     nameRequired: '名称必填',
     urlRequired: 'URL 不能为空',
+    contentRequired: '配置内容不能为空',
     subUpdated: '已更新',
     subCreated: '已创建',
     saveFailed: '失败',

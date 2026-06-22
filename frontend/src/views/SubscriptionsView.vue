@@ -269,10 +269,14 @@ async function handleSave() {
     message.error(t('subscriptions.urlRequired'))
     return
   }
+  if (form.value.source === 'local' && !form.value.content) {
+    message.error(t('subscriptions.contentRequired'))
+    return
+  }
   saving.value = true
   try {
     if (editingSub.value) {
-      const payload: Record<string, any> = { displayName: form.value.displayName, ua: form.value.ua || undefined }
+      const payload: Record<string, any> = { displayName: form.value.displayName, source: form.value.source, ua: form.value.ua || undefined }
       if (form.value.source === 'local') {
         payload.source = 'local'
         payload.content = form.value.content
@@ -282,7 +286,7 @@ async function handleSave() {
       await subscriptionApi.update(editingSub.value.name, payload)
       message.success(t('subscriptions.subUpdated'))
     } else {
-      const payload: Record<string, any> = { name: form.value.name, displayName: form.value.displayName, ua: form.value.ua || undefined }
+      const payload: Record<string, any> = { name: form.value.name, displayName: form.value.displayName, source: form.value.source, ua: form.value.ua || undefined }
       if (form.value.source === 'local') {
         payload.source = 'local'
         payload.content = form.value.content

@@ -55,7 +55,7 @@ func (c *Client) FetchRaw(input string) (string, error) {
 	return string(data), nil
 }
 
-// IsClashFormat checks if content looks like Clash YAML
+// IsClashFormat checks if content is standard Clash YAML (with proxies section)
 func IsClashFormat(content string) bool {
 	return strings.Contains(content, "proxies:") || strings.Contains(content, "Proxy:")
 }

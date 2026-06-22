@@ -142,6 +142,7 @@ export default {
     deleteLabel: 'Delete',
     nameRequired: 'Name required',
     urlRequired: 'URL is required',
+    contentRequired: 'Content is required',
     subUpdated: 'Updated',
     subCreated: 'Created',
     saveFailed: 'Failed',
