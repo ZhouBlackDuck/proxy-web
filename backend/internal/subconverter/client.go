@@ -116,9 +116,10 @@ func IsClashFormat(content string) bool {
 	return strings.Contains(content, "proxies:") || strings.Contains(content, "Proxy:")
 }
 
-// Convert converts a local file to Clash (mihomo) format via subconverter
-func (c *Client) Convert(filePath string) (string, error) {
-	reqURL := fmt.Sprintf("%s/sub?target=clash&url=%s", c.baseURL, url.QueryEscape(filePath))
+// Convert converts a subscription URL to Clash (mihomo) format via subconverter
+// For remote URLs, let subconverter download directly (avoids temp file issues)
+func (c *Client) Convert(input string) (string, error) {
+	reqURL := fmt.Sprintf("%s/sub?target=clash&url=%s", c.baseURL, url.QueryEscape(input))
 	resp, err := c.http.Get(reqURL)
 	if err != nil {
 		return "", fmt.Errorf("subconverter: %w", err)

@@ -95,7 +95,7 @@ func (h *SubscriptionHandler) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "updated"})
 }
 
-// Delete deletes a subscription
+// Delete deletes a subscription and its temp files
 func (h *SubscriptionHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	if err := h.store.Delete(name); err != nil {
@@ -106,7 +106,21 @@ func (h *SubscriptionHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, code, map[string]string{"error": err.Error()})
 		return
 	}
+	// Clean up temp files for this subscription
+	h.cleanupTempFiles(name)
 	writeJSON(w, http.StatusOK, map[string]string{"message": "deleted"})
+}
+
+// cleanupTempFiles removes temporary files for a subscription
+func (h *SubscriptionHandler) cleanupTempFiles(name string) {
+	pattern := filepath.Join(h.tmpDir, "sub_*.txt")
+	files, err := filepath.Glob(pattern)
+	if err != nil {
+		return
+	}
+	for _, f := range files {
+		os.Remove(f)
+	}
 }
 
 // Sync validates a subscription by converting it through subconverter

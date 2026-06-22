@@ -265,15 +265,20 @@ func (h *ConfigHandler) buildConfig(subscriptionName string) ([]byte, error) {
 				if fetchErr == nil && result.IsClash {
 					// Clash format: use raw content directly to preserve proxy-groups/rules
 					subYaml = result.Content
-				} else if fetchErr == nil && result.FilePath != "" {
-					// Non-Clash format (base64 decoded): use subconverter with local file
-					converted, err := h.converter.Convert(result.FilePath)
-					if err != nil {
-						subYaml = "proxies: []\nproxy-groups: []\nrules: []"
-					} else {
-						subYaml = fixNullProxyGroups(converted)
-					}
 				} else if fetchErr == nil {
+				// Non-Clash format: use subconverter
+				// For URL subscriptions, pass original URL; for local, use temp file
+				convertInput := input
+				if sub.Source == "local" && result.FilePath != "" {
+					convertInput = result.FilePath
+				}
+				converted, err := h.converter.Convert(convertInput)
+				if err != nil {
+					subYaml = "proxies: []\nproxy-groups: []\nrules: []"
+				} else {
+					subYaml = fixNullProxyGroups(converted)
+				}
+			} else if fetchErr == nil {
 					subYaml = "proxies: []\nproxy-groups: []\nrules: []"
 				} else {
 					subYaml = "proxies: []\nproxy-groups: []\nrules: []"
