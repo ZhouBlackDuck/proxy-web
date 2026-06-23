@@ -64,7 +64,8 @@ fi
 
 # Substitute ENV variables in nginx config
 export NGINX_CLIENT_MAX_BODY_SIZE=${NGINX_CLIENT_MAX_BODY_SIZE:-10m}
-envsubst '${NGINX_CLIENT_MAX_BODY_SIZE}' < /etc/nginx/http.d/default.conf > /tmp/nginx.conf
+export NGINX_PORT=${NGINX_PORT:-80}
+envsubst '${NGINX_CLIENT_MAX_BODY_SIZE} ${NGINX_PORT}' < /etc/nginx/http.d/default.conf > /tmp/nginx.conf
 mv /tmp/nginx.conf /etc/nginx/http.d/default.conf
 
 # Start Nginx in background
