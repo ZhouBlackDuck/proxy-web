@@ -4,7 +4,6 @@ set -e
 echo "=== Proxy WebUI Starting ==="
 
 # Initialize data directories
-mkdir -p /data/webui/profiles
 mkdir -p /data/mihomo/bin
 
 # Copy mihomo binary and GeoIP data to data volume if not present
@@ -60,17 +59,6 @@ log-level: info
 external-controller: 127.0.0.1:9090
 EOF
     echo "Created initial mihomo config.yaml"
-fi
-
-# Generate initial profiles.json if not exists
-if [ ! -f /data/webui/profiles.json ]; then
-    cat > /data/webui/profiles.json << 'EOF'
-{
-  "activeProfileId": "",
-  "profiles": []
-}
-EOF
-    echo "Created initial profiles.json"
 fi
 
 # Substitute ENV variables in nginx config
