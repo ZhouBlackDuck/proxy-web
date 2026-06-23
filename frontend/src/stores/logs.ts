@@ -10,6 +10,7 @@ export interface LogEntry {
 
 export const useLogStore = defineStore('logs', () => {
   const logs = ref<LogEntry[]>([])
+  let fetching = false
 
   function clearLogs() {
     logs.value = []
@@ -37,8 +38,10 @@ export const useLogStore = defineStore('logs', () => {
     return filtered
   }
 
-  // Fetch logs from server
+  // Fetch logs from server (skips if a fetch is already in flight)
   async function fetchLogs(token: string) {
+    if (fetching) return
+    fetching = true
     try {
       const resp = await fetch('/api/logs', {
         headers: { Authorization: `Bearer ${token}` },
@@ -49,6 +52,8 @@ export const useLogStore = defineStore('logs', () => {
       }
     } catch {
       // ignore
+    } finally {
+      fetching = false
     }
   }
 

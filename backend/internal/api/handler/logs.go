@@ -24,7 +24,7 @@ func NewLogHandler(cfg *config.Config) *LogHandler {
 func (h *LogHandler) GetLogs(w http.ResponseWriter, r *http.Request) {
 	logPath := filepath.Join(h.cfg.DataDir, "mihomo", "mihomo.log")
 
-	const tailSize = 64 * 1024 // 64KB
+	const tailSize = 256 * 1024 // 256KB
 
 	f, err := os.Open(logPath)
 	if err != nil {

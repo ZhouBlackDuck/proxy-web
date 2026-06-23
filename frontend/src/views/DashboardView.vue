@@ -112,13 +112,13 @@
         <n-card :title="t('dashboard.connectivity')" size="small" style="height: 100%">
           <template #header-extra>
             <n-space :size="4">
-              <n-button size="tiny" :type="manageMode ? 'warning' : 'default'" :disabled="testingConnectivity || testingSingle !== null" @click="manageMode = !manageMode">
+              <n-button size="tiny" :type="manageMode ? 'warning' : 'default'" :disabled="testingConnectivity || testingSites.size > 0" @click="manageMode = !manageMode">
                 {{ manageMode ? t('dashboard.done') : t('dashboard.manage') }}
               </n-button>
-              <n-button size="tiny" :loading="testingConnectivity" :disabled="manageMode || testingSingle !== null" @click="handleTestAll">{{ t('dashboard.test') }}</n-button>
+              <n-button size="tiny" :loading="testingConnectivity" :disabled="manageMode || testingSites.size > 0" @click="handleTestAll">{{ t('dashboard.test') }}</n-button>
             </n-space>
           </template>
-          <n-spin :show="testingConnectivity && testingSingle === null" style="min-height: 60px">
+          <n-spin :show="testingConnectivity && testingSites.size === 0" style="min-height: 60px">
             <n-grid :x-gap="10" :y-gap="10" :cols="8" responsive="screen" item-responsive>
               <n-gi v-for="(site, i) in testSites" :key="site.name" span="4 m:2 l:1">
                 <div
@@ -127,12 +127,12 @@
                     'site-ok': resultMap[site.name]?.ok,
                     'site-fail': resultMap[site.name] && !resultMap[site.name].ok && resultMap[site.name].latency < 0,
                     'site-manage': manageMode,
-                    'site-loading': testingSingle === site.name,
+                    'site-loading': testingSites.has(site.name),
                   }"
                   @click="manageMode ? openEditSite(i) : handleTestSingle(site)"
                 >
                   <div v-if="manageMode" class="site-delete" @click.stop="removeSite(i)">✕</div>
-                  <n-spin :show="testingSingle === site.name" size="small">
+                  <n-spin :show="testingSites.has(site.name)" size="small">
                     <div class="site-icon" v-html="getSiteIcon(site.icon)"></div>
                     <div class="site-name">{{ site.name }}</div>
                     <div v-if="resultMap[site.name]" class="site-latency" :class="{ timeout: resultMap[site.name].latency < 0 }">
@@ -229,7 +229,7 @@ const closingConnections = ref(false)
 const updatingGeo = ref(false)
 const restarting = ref(false)
 const testingConnectivity = ref(false)
-const testingSingle = ref<string | null>(null)
+const testingSites = ref(new Set<string>())
 
 // Test sites management
 const DEFAULT_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>'
@@ -516,8 +516,8 @@ async function handleTestAll() {
 }
 
 async function handleTestSingle(site: TestSite) {
-  if (testingConnectivity.value || testingSingle.value) return
-  testingSingle.value = site.name
+  if (testingConnectivity.value || testingSites.value.has(site.name)) return
+  testingSites.value = new Set(testingSites.value).add(site.name)
   try {
     const results = await testApi.testAll([site])
     if (results.length > 0) {
@@ -526,7 +526,9 @@ async function handleTestSingle(site: TestSite) {
   } catch (err: any) {
     message.error(site.name + ': ' + t('dashboard.testFailed'))
   } finally {
-    testingSingle.value = null
+    const next = new Set(testingSites.value)
+    next.delete(site.name)
+    testingSites.value = next
   }
 }
 

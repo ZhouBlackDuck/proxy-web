@@ -86,12 +86,6 @@ func (h *ConfigHandler) Activate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// PATCH runtime settings that PUT /configs may not apply
-	h.kernel.PatchConfig(map[string]interface{}{
-		"allow-lan":    true,
-		"bind-address": "*",
-	})
-
 	// Save active subscription
 	h.cfg.ActiveSubscription = subName
 	h.cfg.Save()
