@@ -4,6 +4,7 @@ set -e
 echo "=== Proxy WebUI Starting ==="
 
 # Initialize data directories
+mkdir -p /data/webui
 mkdir -p /data/mihomo/bin
 
 # Copy mihomo binary and GeoIP data to data volume if not present
