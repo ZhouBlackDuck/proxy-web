@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -19,11 +20,22 @@ func NewLogHandler(cfg *config.Config) *LogHandler {
 	return &LogHandler{cfg: cfg}
 }
 
-// GetLogs returns logs from server-side storage
+// GetLogs returns logs from server-side storage (tail-read, last 64KB)
 func (h *LogHandler) GetLogs(w http.ResponseWriter, r *http.Request) {
-	// Read logs from file
 	logPath := filepath.Join(h.cfg.DataDir, "mihomo", "mihomo.log")
-	content, err := os.ReadFile(logPath)
+
+	const tailSize = 64 * 1024 // 64KB
+
+	f, err := os.Open(logPath)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"logs": []interface{}{},
+		})
+		return
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"logs": []interface{}{},
@@ -31,8 +43,37 @@ func (h *LogHandler) GetLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Seek to tail position if file is larger than tailSize
+	readOffset := int64(0)
+	if info.Size() > tailSize {
+		readOffset = info.Size() - tailSize
+		if _, err := f.Seek(readOffset, io.SeekStart); err != nil {
+			writeJSON(w, http.StatusOK, map[string]interface{}{
+				"logs": []interface{}{},
+			})
+			return
+		}
+	}
+
+	buf := make([]byte, info.Size()-readOffset)
+	n, err := io.ReadFull(f, buf)
+	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"logs": []interface{}{},
+		})
+		return
+	}
+	content := string(buf[:n])
+
+	// If we started mid-file, skip the first incomplete line
+	if readOffset > 0 {
+		if idx := strings.Index(content, "\n"); idx >= 0 {
+			content = content[idx+1:]
+		}
+	}
+
 	// Parse logs
-	lines := strings.Split(string(content), "\n")
+	lines := strings.Split(content, "\n")
 	logs := make([]map[string]interface{}, 0)
 
 	for _, line := range lines {
@@ -40,7 +81,6 @@ func (h *LogHandler) GetLogs(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// Parse log line: time="..." level=... msg="..."
 		entry := parseLogLine(line)
 		if entry != nil {
 			logs = append(logs, entry)

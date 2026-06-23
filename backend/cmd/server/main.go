@@ -56,6 +56,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "mihomo not started, you may need to configure it via WebUI\n")
 	}
 
+	// Start log rotator (periodically truncates mihomo and subconverter logs)
+	pm.StartLogRotator()
+
 	// Create HTTP server
 	router := api.NewRouter(cfg, fileStore, pm)
 	server := &http.Server{
@@ -89,6 +92,7 @@ func main() {
 
 	// Stop child processes
 	pm.StopAll()
+	pm.StopLogRotator()
 
 	fmt.Println("Server exited")
 }

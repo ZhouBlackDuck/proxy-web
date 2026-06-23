@@ -1,6 +1,7 @@
 package process
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"os"
@@ -13,12 +14,21 @@ import (
 	"github.com/zwforum/proxy-web/internal/config"
 )
 
+const (
+	mihomoLogMaxSize        = 2 * 1024 * 1024  // 2MB
+	mihomoLogKeepSize       = 1 * 1024 * 1024  // 1MB
+	subconverterLogMaxSize  = 10 * 1024 * 1024 // 10MB
+	subconverterLogKeepSize = 5 * 1024 * 1024  // 5MB
+	logRotateInterval       = 5 * time.Minute
+)
+
 // Manager manages child processes (mihomo and subconverter)
 type Manager struct {
-	cfg         *config.Config
-	mihomo      *processInfo
+	cfg          *config.Config
+	mihomo       *processInfo
 	subconverter *processInfo
-	mu          sync.RWMutex
+	stopRotate   chan struct{}
+	mu           sync.RWMutex
 }
 
 type processInfo struct {
@@ -46,6 +56,7 @@ func NewManager(cfg *config.Config) *Manager {
 		cfg:          cfg,
 		mihomo:       &processInfo{stopCh: make(chan struct{}, 1), done: make(chan struct{})},
 		subconverter: &processInfo{stopCh: make(chan struct{}, 1), done: make(chan struct{})},
+		stopRotate:   make(chan struct{}),
 	}
 }
 
@@ -125,15 +136,9 @@ func (m *Manager) StartSubConverter() error {
 		return fmt.Errorf("subconverter binary not found: %s", binaryPath)
 	}
 
-	// Redirect subconverter output to log file with size limit
+	// Redirect subconverter output to log file
 	logPath := filepath.Join(m.cfg.DataDir, "subconverter", "subconverter.log")
 	os.MkdirAll(filepath.Dir(logPath), 0755)
-
-	// Rotate log if exceeds 10MB
-	const maxLogSize = 10 * 1024 * 1024
-	if info, err := os.Stat(logPath); err == nil && info.Size() > maxLogSize {
-		os.Remove(logPath)
-	}
 
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
@@ -160,7 +165,7 @@ func (m *Manager) StartSubConverter() error {
 		fmt.Fprintf(os.Stderr, "subconverter health check failed: %v\n", err)
 	}
 
-	go m.monitorProcess("subconverter", m.subconverter, nil)
+	go m.monitorProcess("subconverter", m.subconverter, logFile)
 
 	fmt.Printf("subconverter started (PID: %d)\n", cmd.Process.Pid)
 	return nil
@@ -332,4 +337,66 @@ func waitForHTTP(url string, timeout time.Duration) error {
 	}
 
 	return fmt.Errorf("timeout waiting for %s", url)
+}
+
+// StartLogRotator starts a background goroutine that periodically checks
+// and rotates log files for both mihomo and subconverter.
+func (m *Manager) StartLogRotator() {
+	go func() {
+		ticker := time.NewTicker(logRotateInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				mihomoPath := filepath.Join(m.cfg.DataDir, "mihomo", "mihomo.log")
+				subconverterPath := filepath.Join(m.cfg.DataDir, "subconverter", "subconverter.log")
+
+				rotateLog(mihomoPath, mihomoLogMaxSize, mihomoLogKeepSize)
+				rotateLog(subconverterPath, subconverterLogMaxSize, subconverterLogKeepSize)
+			case <-m.stopRotate:
+				return
+			}
+		}
+	}()
+}
+
+// StopLogRotator stops the background log rotation goroutine.
+func (m *Manager) StopLogRotator() {
+	close(m.stopRotate)
+}
+
+// rotateLog checks if a log file exceeds maxSize and truncates it,
+// keeping only the tail (keepSize bytes) starting from a complete line.
+func rotateLog(path string, maxSize, keepSize int64) {
+	info, err := os.Stat(path)
+	if err != nil || info.Size() <= maxSize {
+		return
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		return
+	}
+
+	// Read the tail portion
+	tail := make([]byte, keepSize)
+	n, err := f.ReadAt(tail, info.Size()-keepSize)
+	f.Close()
+	if err != nil && n == 0 {
+		return
+	}
+	tail = tail[:n]
+
+	// Find the first newline to ensure we keep only complete lines
+	if idx := bytes.IndexByte(tail, '\n'); idx >= 0 {
+		tail = tail[idx+1:]
+	}
+
+	// Truncate and write back the tail
+	if err := os.Truncate(path, 0); err != nil {
+		return
+	}
+	os.WriteFile(path, tail, 0644)
+	// The process's O_APPEND fd will seek to the new end on next write
 }

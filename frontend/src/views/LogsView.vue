@@ -59,7 +59,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '../components/layout/AppLayout.vue'
 import { useLogStore } from '../stores/logs'
@@ -73,12 +73,9 @@ const paused = ref(false)
 
 function togglePause() {
   paused.value = !paused.value
-  if (paused.value) {
-    // Pausing: record current time, hide logs arriving after this
-    logStore.pauseTime = Math.floor(Date.now() / 1000)
-  } else {
-    // Resuming: clear pause filter, show all current logs
-    logStore.pauseTime = null
+  if (!paused.value) {
+    // Resuming: immediately fetch latest logs
+    fetchLogs()
   }
 }
 
@@ -120,20 +117,28 @@ async function handleClearLogs() {
       headers: { Authorization: `Bearer ${token}` },
     })
     logStore.clearLogs()
-    logStore.pauseTime = null
   } catch {
     // ignore
   }
 }
 
+let timer: ReturnType<typeof setInterval> | null = null
+
 onMounted(() => {
   fetchLogs()
   // Auto-refresh every 2 seconds
-  setInterval(() => {
+  timer = setInterval(() => {
     if (!paused.value) {
       fetchLogs()
     }
   }, 2000)
+})
+
+onUnmounted(() => {
+  if (timer) {
+    clearInterval(timer)
+    timer = null
+  }
 })
 </script>
 

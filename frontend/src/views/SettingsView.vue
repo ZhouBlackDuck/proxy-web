@@ -210,7 +210,7 @@ interface PortItem {
 }
 
 const portList = reactive<PortItem[]>([
-  { key: 'mixed', label: 'Mixed (HTTP+SOCKS)', configKey: 'mixed-port', value: 7890, enabled: true, defaultPort: 7890 },
+  { key: 'mixed', label: 'Mixed', configKey: 'mixed-port', value: 7890, enabled: true, defaultPort: 7890 },
   { key: 'http', label: 'HTTP', configKey: 'port', value: 0, enabled: false, defaultPort: 7891 },
   { key: 'socks', label: 'SOCKS', configKey: 'socks-port', value: 0, enabled: false, defaultPort: 7892 },
   { key: 'redir', label: 'Redir', configKey: 'redir-port', value: 0, enabled: false, defaultPort: 7893 },
