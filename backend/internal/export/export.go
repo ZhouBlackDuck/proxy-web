@@ -218,6 +218,8 @@ func (e *Exporter) Import(zipData []byte, forceImportSubs *bool) (*ImportResult,
 			if platformData.Settings != nil {
 				delete(platformData.Settings, "mihomo")
 				delete(platformData.Settings, "substore")
+				delete(platformData.Settings, "passwordHash")
+				delete(platformData.Settings, "jwtSecret")
 				if data, err := json.Marshal(platformData.Settings); err == nil {
 					json.Unmarshal(data, e.cfg)
 					e.cfg.Save()
