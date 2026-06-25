@@ -59,16 +59,23 @@ func main() {
 	// Start log rotator (periodically truncates mihomo and subconverter logs)
 	pm.StartLogRotator()
 
+	// Determine listen port from env
+	apiPort := os.Getenv("API_PORT")
+	if apiPort == "" {
+		apiPort = "3000"
+	}
+	listenAddr := fmt.Sprintf(":%s", apiPort)
+
 	// Create HTTP server
 	router := api.NewRouter(cfg, fileStore, pm)
 	server := &http.Server{
-		Addr:    ":3000",
+		Addr:    listenAddr,
 		Handler: router,
 	}
 
 	// Start HTTP server
 	go func() {
-		fmt.Printf("WebUI backend listening on :3000\n")
+		fmt.Printf("WebUI backend listening on %s\n", listenAddr)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			fmt.Fprintf(os.Stderr, "HTTP server error: %v\n", err)
 			os.Exit(1)
